@@ -24,9 +24,11 @@
 <nav id="nav">
   <div class="links" id="links">
     <a href="#inbox" data-s="inbox">Inbox</a>
-    <a href="#how" data-s="how">How</a>
+    <a href="#live" data-s="live">Live</a>
+    <a href="#pulse" data-s="pulse">Pulse</a>
+    <a href="#best" data-s="best">Top</a>
+    <a href="#shell" data-s="shell">Shell</a>
     <a href="#floors" data-s="floors">Floors</a>
-    <a href="#rules" data-s="rules">Handbook</a>
     <a href="#faq" data-s="faq">FAQ</a>
     <span class="ind" id="ind"></span>
   </div>
@@ -69,17 +71,53 @@
           <button type="button" data-f="boss"><span>To: Elon</span><em></em></button>
           <button type="button" data-f="starred"><span>Starred</span><em></em></button>
           <button type="button" data-f="sent"><span>Sent</span><em></em></button>
+          <button type="button" data-f="following"><span>Following</span><em></em></button>
           <button type="button" data-f="drafts"><span>Drafts</span><em id="cDrafts"></em></button>
         </div>
         <div class="lbl">FLOORS</div>
         <div class="sfloors" id="sideFloors"></div>
+        <div class="lbl">LABELS</div>
+        <div class="sfloors stags" id="sideTags"></div>
         <div class="online" id="online"></div>
       </aside>
       <div class="list">
-        <div class="lhead"><b id="lTitle">Inbox</b><span id="lCount"></span><button class="ico" id="refresh" type="button" aria-label="Refresh" title="Refresh">&#8635;</button></div>
+        <div class="lhead"><b id="lTitle">Inbox</b><span id="lCount"></span><button class="sortb" id="sortB" type="button">sort: new</button><button class="ico" id="refresh" type="button" aria-label="Refresh" title="Refresh">&#8635;</button></div>
         <div class="rows" id="rows" data-lenis-prevent></div>
       </div>
       <article class="read" id="read" data-lenis-prevent></article>
+    </div>
+  </section>
+
+  <section class="sec" id="live">
+    <h2 class="h2"><span>Live wire</span></h2>
+    <div class="term rv" id="wire">
+      <div class="tbar"><span class="dots"><i></i><i></i><i></i></span><span class="tt">xmail://live — every floor</span><span class="lv"><i></i>live</span></div>
+      <div class="tbody" id="wireBody" data-lenis-prevent><div class="wwait">connecting…</div></div>
+    </div>
+  </section>
+
+  <section class="sec" id="pulse">
+    <h2 class="h2"><span>Pulse</span></h2>
+    <div class="pbar rv"><span id="pWeek">this week · anonymous</span><div class="pfl" id="pFloor"></div></div>
+    <div class="polls rv" id="polls"><div class="empty">Reading the pulse…</div></div>
+  </section>
+
+  <section class="sec" id="hours">
+    <h2 class="h2"><span>Office hours</span></h2>
+    <div class="heat rv" id="heat"><div class="empty">Reading the clock…</div></div>
+  </section>
+
+  <section class="sec" id="best">
+    <h2 class="h2"><span>Top mail</span></h2>
+    <div class="tabs rv" id="bTabs"><button type="button" data-r="week" class="on">this week</button><button type="button" data-r="month">this month</button><button type="button" data-r="all">all time</button></div>
+    <div class="board rv" id="bList"><div class="empty">Ranking…</div></div>
+  </section>
+
+  <section class="sec" id="shell">
+    <h2 class="h2"><span>Shell</span></h2>
+    <div class="term rv" id="sh">
+      <div class="tbar"><span class="dots"><i></i><i></i><i></i></span><span class="tt">xmail — zsh</span><span class="lv dim">real data</span></div>
+      <div class="tbody sh" id="shOut" data-lenis-prevent><label class="shline" id="shLine"><span class="ps" id="shPs">anon@xmail ~ %</span><input id="shIn" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Shell"></label></div>
     </div>
   </section>
 
@@ -122,13 +160,14 @@
       <details><summary>What does signing in cost?</summary><div class="ans"><p>Nothing. One signed message. It is not a transaction and cannot move anything.</p></div></details>
       <details><summary>What gets removed?</summary><div class="ans"><p>Three reports hide a mail or reply. Emails and phone numbers are redacted, slurs are scrubbed and links stay plain text.</p></div></details>
       <details><summary>Can I delete my mail?</summary><div class="ans"><p>Yes. Open it and hit delete. Drafts live only in your browser.</p></div></details>
+      <details><summary>What is Pulse?</summary><div class="ans"><p>Three anonymous questions a week. One answer per wallet, counted by floor, reset every Monday.</p></div></details>
       <details><summary>Shortcuts?</summary><div class="ans"><p><kbd>c</kbd> compose · <kbd>/</kbd> search · <kbd>j</kbd> <kbd>k</kbd> move · <kbd>r</kbd> reply · <kbd>s</kbd> star · <kbd>esc</kbd> close</p></div></details>
     </div>
   </section>
 </main>
 
 <div id="layer"></div>
-<p class="sr" id="live" aria-live="polite"></p>
+<p class="sr" id="srlive" aria-live="polite"></p>
 <script src="/js/lenis.min.js" defer></script>
 <script src="/js/xmail.js" defer></script>
 </body>
