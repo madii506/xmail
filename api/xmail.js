@@ -8,7 +8,7 @@ const CA = E('XMAIL_CA'), XH = E('XMAIL_X');
 const MIN_PCT = Number(E('XMAIL_MIN_PCT', '0')) || 0;   // % of $XMAIL supply needed to post, once the coin exists (0 = no gate)
 const RPC_URL = E('RPC_URL');
 const RPCS = [RPC_URL, 'https://api.mainnet-beta.solana.com', 'https://solana-rpc.publicnode.com'].filter(Boolean);
-const DB_URL = E('DATABASE_URL') || E('POSTGRES_URL');
+const DB_URL = E('XMAIL_DB_URL') || E('XMAIL_DB_DATABASE_URL') || E('XMAIL_DB_POSTGRES_URL') || E('DATABASE_URL') || E('POSTGRES_URL');
 const SECRET = E('SESSION_SECRET') || crypto.createHash('sha256').update('xmail-session:' + DB_URL).digest('hex');
 const B58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const FLOORS = ['eng', 'grok', 'ads', 'payments', 'product', 'design', 'trust-safety', 'sales', 'ex-x', 'other'];
