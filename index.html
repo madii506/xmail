@@ -86,56 +86,76 @@
   </section>
 
   <section class="sec pg-home" id="how">
-    <h2 class="h2"><span>How it works</span></h2>
-    <ol class="steps">
-      <li class="rv" style="--k:0"><b>01</b><span class="sk">connect</span><span class="sd">One signature. Not a transaction.</span><pre class="sa" aria-hidden="true">[ ✓ ]</pre></li>
-      <li class="rv" style="--k:1"><b>02</b><span class="sk">get a codename</span><span class="sd">You get one on the spot. Change it anytime.</span><pre class="sa" aria-hidden="true">quiet_shift_42</pre></li>
-      <li class="rv" style="--k:2"><b>03</b><span class="sk">pick a floor</span><span class="sd">Eng, Grok, Ads, Payments, T&amp;S… or Ex-X.</span><pre class="sa" aria-hidden="true">FL 12 ▸ ENG</pre></li>
-      <li class="rv" style="--k:3"><b>04</b><span class="sk">hit reply all</span><span class="sd">Mail, reply, +1, star. Your wallet never shows.</span><pre class="sa" aria-hidden="true">[ send ]</pre></li>
-    </ol>
+    <div class="shead"><div class="arule"><span class="ai">[01]</span><span class="ad"></span></div><h2 class="h2 asc" data-t="How it works"><span class="sr">How it works</span></h2></div>
+    <div class="hsteps">
+      <div class="hcard ac rv" style="--k:0"><pre class="hart" aria-hidden="true"> .---------------.
+ |  ___________  |
+ | |  sign in  | |
+ | '-----------' |
+ |    [  ok  ]   |
+ '---------------'</pre><b class="hn">01</b><h3>connect</h3><p>One signature. Not a transaction.</p></div>
+      <div class="hcard ac rv" style="--k:1"><pre class="hart" aria-hidden="true">  .-------------.
+  |  HELLO      |
+  |  my name is |
+  |             |
+  | quiet_shift |
+  '-------------'</pre><b class="hn">02</b><h3>get a codename</h3><p>Yours on the spot. Change it anytime.</p></div>
+      <div class="hcard ac rv" style="--k:2"><pre class="hart" aria-hidden="true">   .-----------.
+   | (12) (11) |
+   | (10) (09) |
+   | (08) (07) |
+   | ( ^ )( v )|
+   '-----------'</pre><b class="hn">03</b><h3>pick a floor</h3><p>Eng, Grok, Ads, T&amp;S… or Ex-X.</p></div>
+      <div class="hcard ac rv" style="--k:3"><pre class="hart" aria-hidden="true"> +---------------+
+ |\             /|
+ |  \         /  |
+ |    \     /    |
+ |      \ /      |
+ +---------------+</pre><b class="hn">04</b><h3>hit reply all</h3><p>Mail, reply, +1, star. Wallet never shows.</p></div>
+    </div>
   </section>
 
   <section class="sec pg-home" id="live">
-    <h2 class="h2"><span>Live wire</span></h2>
-    <div class="term rv" id="wire">
+    <div class="shead"><div class="arule"><span class="ai">[02]</span><span class="ad"></span></div><h2 class="h2 asc" data-t="Live wire"><span class="sr">Live wire</span></h2></div>
+    <div class="term ac rv" id="wire">
       <div class="tbar"><span class="dots"><i></i><i></i><i></i></span><span class="tt">xmail://live — every floor</span><span class="lv"><i></i>live</span></div>
       <div class="tbody" id="wireBody" data-lenis-prevent><div class="wwait">connecting…</div></div>
     </div>
   </section>
 
   <section class="sec pg-home" id="pulse">
-    <h2 class="h2"><span>Pulse</span></h2>
+    <div class="shead"><div class="arule"><span class="ai">[03]</span><span class="ad"></span></div><h2 class="h2 asc" data-t="Pulse"><span class="sr">Pulse</span></h2></div>
     <div class="pbar rv"><span id="pWeek">this week · anonymous</span><div class="pfl" id="pFloor"></div></div>
     <div class="polls rv" id="polls"><div class="empty">Reading the pulse…</div></div>
   </section>
 
   <section class="sec pg-home" id="hours">
-    <h2 class="h2"><span>Office hours</span></h2>
-    <div class="heat rv" id="heat"><div class="empty">Reading the clock…</div></div>
+    <div class="shead"><div class="arule"><span class="ai">[04]</span><span class="ad"></span></div><h2 class="h2 asc" data-t="Office hours"><span class="sr">Office hours</span></h2></div>
+    <div class="heat ac rv" id="heat"><div class="empty">Reading the clock…</div></div>
   </section>
 
   <section class="sec pg-home" id="best">
-    <h2 class="h2"><span>Top mail</span></h2>
+    <div class="shead"><div class="arule"><span class="ai">[05]</span><span class="ad"></span></div><h2 class="h2 asc" data-t="Top mail"><span class="sr">Top mail</span></h2></div>
     <div class="tabs rv" id="bTabs"><button type="button" data-r="week" class="on">this week</button><button type="button" data-r="month">this month</button><button type="button" data-r="all">all time</button></div>
-    <div class="board rv" id="bList"><div class="empty">Ranking…</div></div>
+    <div class="board ac rv" id="bList"><div class="empty">Ranking…</div></div>
   </section>
 
   <section class="sec pg-inbox" id="shell">
-    <h2 class="h2"><span>Shell</span></h2>
-    <div class="term rv" id="sh">
+    <div class="shead"><div class="arule"><span class="ai">[02]</span><span class="ad"></span></div><h2 class="h2 asc" data-t="Shell"><span class="sr">Shell</span></h2></div>
+    <div class="term ac rv" id="sh">
       <div class="tbar"><span class="dots"><i></i><i></i><i></i></span><span class="tt">xmail — zsh</span><span class="lv dim">real data</span></div>
       <div class="tbody sh" id="shOut" data-lenis-prevent><label class="shline" id="shLine"><span class="ps" id="shPs">anon@xmail ~ %</span><input id="shIn" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Shell"></label></div>
     </div>
   </section>
 
   <section class="sec pg-home" id="floors">
-    <h2 class="h2"><span>Floors</span></h2>
-    <div class="board rv" id="board"><div class="empty">Reading the directory…</div></div>
+    <div class="shead"><div class="arule"><span class="ai">[06]</span><span class="ad"></span></div><h2 class="h2 asc" data-t="Floors"><span class="sr">Floors</span></h2></div>
+    <div class="fwrap rv"><pre class="tower" id="tower" aria-hidden="true"></pre><div class="board ac" id="board"><div class="empty">Reading the directory…</div></div></div>
   </section>
 
   <section class="sec pg-home" id="rules">
-    <h2 class="h2"><span>Handbook</span></h2>
-    <div class="memo rv">
+    <div class="shead"><div class="arule"><span class="ai">[07]</span><span class="ad"></span></div><h2 class="h2 asc" data-t="Handbook"><span class="sr">Handbook</span></h2></div>
+    <div class="memo ac rv">
       <div class="memoh"><span>to:</span> everyone<br><span>re:</span> the rules</div>
       <ol class="rl">
         <li><b>Codenames only.</b> Never name a coworker who isn't already public.</li>
@@ -149,7 +169,7 @@
   </section>
 
   <section class="sec pg-home" id="faq">
-    <h2 class="h2"><span>FAQ</span></h2>
+    <div class="shead"><div class="arule"><span class="ai">[08]</span><span class="ad"></span></div><h2 class="h2 asc" data-t="FAQ"><span class="sr">FAQ</span></h2></div>
     <div class="qa rv">
       <details><summary>Is this X?</summary><div class="ans"><p>No. Xmail is unofficial and not affiliated with X Corp. or anyone who works there.</p></div></details>
       <details><summary>Who can post?</summary><div class="ans"><p>Anyone with a Solana wallet. Floors are self-declared and nobody is verified.</p></div></details>
