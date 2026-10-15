@@ -12,15 +12,16 @@
   const ALPH = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
   function b58(bytes) { let n = 0n; for (const b of bytes) n = n * 256n + BigInt(b); let s = ''; while (n > 0n) { s = ALPH[Number(n % 58n)] + s; n /= 58n; } for (const b of bytes) { if (b === 0) s = '1' + s; else break; } return s; }
   const b64 = bytes => { let s = ''; for (const b of bytes) s += String.fromCharCode(b); return btoa(s); };
-  const say = t => { $('#live').textContent = t; };
+  const say = t => { $('#srlive').textContent = t; };
   const FLOOR_NO = { eng: '12', grok: '11', ads: '10', payments: '09', product: '08', design: '07', 'trust-safety': '06', sales: '05', other: '01', 'ex-x': 'EXIT' };
   const FLOOR_NAME = { eng: 'Eng', grok: 'Grok', ads: 'Ads', payments: 'Payments', product: 'Product', design: 'Design', 'trust-safety': 'T&S', sales: 'Sales', 'ex-x': 'Ex-X', other: 'Other' };
-  const FOLDER_NAME = { inbox: 'Inbox', hot: 'Hot', boss: 'To: Elon', starred: 'Starred', sent: 'Sent', drafts: 'Drafts' };
+  const FOLDER_NAME = { inbox: 'Inbox', hot: 'Hot', boss: 'To: Elon', starred: 'Starred', sent: 'Sent', following: 'Following', drafts: 'Drafts' };
+  const TAGS = ['comp', 'layoffs', 'culture', 'product', 'rumor', 'ama', 'vent', 'jobs'];
   const fname = f => FLOOR_NAME[f] || 'Other';
 
   const S = {
     cfg: {}, tok: store.get('xm:tok'), code: store.get('xm:code'), floor: store.get('xm:floor'),
-    folder: 'inbox', fl: null, q: '', threads: [], loaded: false, open: null, thread: null, msgs: [], sig: '', req: 0,
+    folder: 'inbox', fl: null, tag: null, sort: 'new', q: '', threads: [], loaded: false, open: null, thread: null, msgs: [], sig: '', req: 0,
     floors: null, totals: null, seen: store.json('xm:seen', {}), drafts: store.json('xm:drafts', []),
   };
 
@@ -283,6 +284,7 @@
     $('#meBtn').classList.toggle('on', on); $('#meLabel').textContent = on ? S.code : innerWidth < 760 ? 'Connect' : 'Connect wallet';
     $('#meIdc').innerHTML = on ? idc(S.code) : '';
     $('#whoChip').textContent = on ? `[ ${S.code} · ${fname(S.floor).toLowerCase()} ]` : '[ anon ]';
+    const ps = $('#shPs'); if (ps) ps.textContent = (on ? S.code : 'anon') + '@xmail ~ %';
   }
   function profileDialog(fresh, after) {
     let floor = S.floor || 'other';
@@ -320,24 +322,25 @@
 
   /* ---------------- the list ---------------- */
   const client = $('#client'), rowsEl = $('#rows');
-  function setFolder(f, fl = null) {
-    S.folder = f; S.fl = fl; if (f !== 'inbox' || fl) { S.q = ''; $('#q').value = ''; }
-    $$('#folders [data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === f && !fl));
+  function setFolder(f, fl = null, tag = null) {
+    S.folder = f; S.fl = fl; S.tag = tag; if (f !== 'inbox' || fl || tag) { S.q = ''; $('#q').value = ''; }
+    $$('#folders [data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === f && !fl && !tag));
     $$('#sideFloors [data-fl]').forEach(b => b.classList.toggle('on', b.dataset.fl === fl));
+    $$('#sideTags [data-tag]').forEach(b => b.classList.toggle('on', b.dataset.tag === tag));
     client.classList.remove('side-on'); S.threads = []; S.loaded = false;
     loadList();
   }
   function skeleton() { rowsEl.innerHTML = Array.from({ length: 6 }, () => `<div class="skel"><i class="a"></i><i style="width:46%"></i><i style="width:82%"></i><i style="width:64%"></i></div>`).join(''); }
   async function loadList(quiet) {
-    const title = S.fl ? 'FL ' + FLOOR_NO[S.fl] + ' · ' + fname(S.fl) : S.q ? 'Search' : FOLDER_NAME[S.folder];
+    const title = S.tag ? '#' + S.tag : S.fl ? 'FL ' + FLOOR_NO[S.fl] + ' · ' + fname(S.fl) : S.q ? 'Search' : FOLDER_NAME[S.folder];
     $('#lTitle').textContent = title;
     if (S.folder === 'drafts') return renderDrafts();
     const id = ++S.req; if (!quiet && !S.loaded) skeleton();
-    const p = new URLSearchParams({ folder: S.folder }); if (S.fl) p.set('floor', S.fl); if (S.q) p.set('q', S.q);
+    const p = new URLSearchParams({ folder: S.folder }); if (S.fl) p.set('floor', S.fl); if (S.q) p.set('q', S.q); if (S.tag) p.set('tag', S.tag); if (S.sort === 'top' && S.folder === 'inbox') p.set('sort', 'top');
     try {
       const j = await api('threads?' + p); if (id !== S.req) return;
       S.threads = j.threads || []; S.loaded = true; S.need = j.need;
-      if (S.folder === 'inbox' && !S.fl && !S.q) { S.inbox = S.threads; renderTape(); }
+      if (S.folder === 'inbox' && !S.fl && !S.q && !S.tag && S.sort !== 'top') { S.inbox = S.threads; renderTape(); }
       renderRows();
     } catch (e) {
       if (id !== S.req) return; if (quiet && S.loaded) return;
@@ -348,10 +351,12 @@
   function renderRows() {
     const T = S.threads, n = T.length;
     $('#lCount').textContent = n ? plural(n, 'mail') : '';
-    if (S.folder === 'inbox' && !S.fl && !S.q) { const u = T.filter(unread).length; const em = $('#cInbox'); em.textContent = u || ''; em.classList.toggle('n', !!u); }
+    if (S.folder === 'inbox' && !S.fl && !S.q && !S.tag) { const u = T.filter(unread).length; const em = $('#cInbox'); em.textContent = u || ''; em.classList.toggle('n', !!u); }
     if (!n) {
       const msg = S.need === 'login' ? `<b>Connect a wallet</b><span>to see your ${S.folder} mail.</span><button class="btn sm pri" type="button" data-do="signin">Connect wallet</button>`
         : S.q ? `<b>Nothing matches “${esc(S.q)}”.</b>`
+          : S.tag ? `<b>Nothing labeled #${esc(S.tag)} yet.</b><button class="btn sm pri" type="button" data-do="compose">[ compose ]</button>`
+          : S.folder === 'following' ? `<b>You're not on any threads yet.</b><span>Mail or reply and it lands here.</span>`
           : S.folder === 'starred' ? `<b>No stars yet.</b><span>Star a mail to keep it here.</span>`
             : S.folder === 'sent' ? `<b>You haven't sent anything.</b><button class="btn sm pri" type="button" data-do="compose">[ compose ]</button>`
               : S.folder === 'boss' ? `<b>Nobody has written to elon yet.</b><button class="btn sm pri" type="button" data-do="compose" data-to="elon">[ write to elon ]</button>`
@@ -362,7 +367,7 @@
     }
     const prev = new Set($$('.row', rowsEl).map(r => r.dataset.id));
     rowsEl.innerHTML = T.map((t, i) => `<button type="button" class="row${unread(t) ? ' un' : ''}${t.id === S.open ? ' sel' : ''}" data-id="${t.id}" style="--i:${prev.has(String(t.id)) ? 0 : Math.min(i, 14)};${prev.has(String(t.id)) ? 'animation:none' : ''}">
-      ${idcEl(t.codename)}<span class="r1"><span class="cn">${esc(t.codename)}</span>${chip(t.floor)}</span><span class="t">${when(t.last)}</span>
+      ${idcEl(t.codename)}<span class="r1"><span class="cn">${esc(t.codename)}</span>${chip(t.floor)}${t.tag ? `<span class="tag">#${esc(t.tag)}</span>` : ''}</span><span class="t">${when(t.last)}</span>
       <span class="r2"><span class="to">to: ${esc(t.to)} · </span>${esc(t.subject)}</span>
       <span class="r3"><span class="pv">${esc(t.preview)}</span>${t.replies ? `<span class="c">↩ ${t.replies}</span>` : ''}${t.votes ? `<span class="c">+${t.votes}</span>` : ''}${t.starred ? '<span class="c">★</span>' : ''}</span></button>`).join('');
   }
@@ -383,12 +388,15 @@
   });
   $('#folders').addEventListener('click', e => { const b = e.target.closest('[data-f]'); if (b) setFolder(b.dataset.f); });
   $('#sideFloors').addEventListener('click', e => { const b = e.target.closest('[data-fl]'); if (b) setFolder('inbox', b.dataset.fl === S.fl ? null : b.dataset.fl); });
+  $('#sideTags').innerHTML = TAGS.map(t => `<button type="button" data-tag="${t}"><span>#${t}</span><em></em></button>`).join('');
+  $('#sideTags').addEventListener('click', e => { const b = e.target.closest('[data-tag]'); if (b) setFolder('inbox', null, b.dataset.tag === S.tag ? null : b.dataset.tag); });
+  $('#sortB').addEventListener('click', () => { S.sort = S.sort === 'top' ? 'new' : 'top'; $('#sortB').textContent = 'sort: ' + S.sort; $('#sortB').classList.toggle('on', S.sort === 'top'); if (S.folder !== 'inbox') setFolder('inbox'); else { S.loaded = false; loadList(); } });
   $('#refresh').addEventListener('click', e => { const b = e.currentTarget; b.classList.add('spin'); setTimeout(() => b.classList.remove('spin'), 450); loadList(true); loadFloors(); if (S.open) refreshThread(); });
   $('#ham').addEventListener('click', () => client.classList.toggle('side-on'));
   let qT; $('#q').addEventListener('input', e => {
     clearTimeout(qT); qT = setTimeout(() => {
       S.q = e.target.value.trim().slice(0, 60);
-      if (S.folder !== 'inbox' || S.fl) { S.folder = 'inbox'; S.fl = null; $$('#folders [data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === 'inbox')); $$('#sideFloors [data-fl]').forEach(b => b.classList.remove('on')); }
+      if (S.folder !== 'inbox' || S.fl || S.tag) { S.folder = 'inbox'; S.fl = null; S.tag = null; $$('#folders [data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === 'inbox')); $$('#sideFloors [data-fl], #sideTags [data-tag]').forEach(b => b.classList.remove('on')); }
       S.loaded = false; loadList();
     }, 280);
   });
@@ -414,7 +422,7 @@
       <button class="tool${t.starred ? ' on' : ''}" type="button" data-a="star">${t.starred ? '★' : '☆'} star</button><span class="sp"></span>
       <button class="tool" type="button" data-a="link">link</button>${t.mine ? '<button class="tool" type="button" data-a="del">delete</button>' : '<button class="tool" type="button" data-a="report">report</button>'}</div>
       <div class="mail"><h3 class="subj">${esc(t.subject)}</h3>
-      <div class="mhd">${idcEl(t.codename)}<div class="who"><b>${esc(t.codename)}${chip(t.floor)}</b><span>to: ${esc(t.to)}</span></div><time>${full(t.at)}</time></div>
+      <div class="mhd">${idcEl(t.codename)}<div class="who"><b>${esc(t.codename)}${chip(t.floor)}</b><span>to: ${esc(t.to)}${t.tag ? ' · #' + esc(t.tag) : ''} · ${plural(t.views || 0, 'view')}</span></div><time>${full(t.at)}</time></div>
       <div class="body">${esc(t.body)}</div></div>
       <div class="msgs" id="msgs">${S.msgs.map(msgHtml).join('')}</div>
       <div class="reply" id="replyBox"></div>`;
@@ -508,13 +516,14 @@
   const TO = ['everyone', 'elon', 'my manager', 'hr', 'the floor', 'grok', 'the next hire'];
   function openCompose(draft, to) {
     if (cmp) { cmp.el.classList.remove('min'); $('[data-c=subject]', cmp.el).focus(); return; }
-    const d = Object.assign({ id: 'd' + Date.now().toString(36), to: to || '', subject: '', body: '' }, draft || {});
+    const d = Object.assign({ id: 'd' + Date.now().toString(36), to: to || '', subject: '', body: '', tag: null }, draft || {});
     const el = document.createElement('div'); el.className = 'cmp'; el.setAttribute('role', 'dialog'); el.dataset.lenisPrevent = '';
     const gate = S.cfg && S.cfg.gate ? ` · needs ${S.cfg.gate}% of $XMAIL` : '';
     el.innerHTML = `<div class="dh"><span>New message</span><span><button type="button" data-cm="min" aria-label="Minimize">_</button><button type="button" data-cm="close" aria-label="Close">&times;</button></span></div>
       <div class="cf"><label for="cTo">to</label><input id="cTo" data-c="to" maxlength="40" placeholder="everyone" autocomplete="off" spellcheck="false" value="${esc(d.to)}"></div>
       <div class="tos">${TO.map(t => `<button type="button" data-to="${esc(t)}">${esc(t)}</button>`).join('')}</div>
       <div class="cf"><label for="cSub">subject</label><input id="cSub" data-c="subject" maxlength="120" autocomplete="off" value="${esc(d.subject)}"></div>
+      <div class="tgs"><span>label</span>${TAGS.map(t => `<button type="button" data-tg="${t}" class="${d.tag === t ? 'on' : ''}">#${t}</button>`).join('')}</div>
       <textarea data-c="body" maxlength="4000" placeholder="Write it like nobody's reading. Emails and phone numbers get redacted." aria-label="Message">${esc(d.body)}</textarea>
       <div class="cbar"><span class="note" data-note>as ${esc(S.code || 'you')} · ${esc(fname(S.floor).toLowerCase())}${gate}</span><button class="btn sm" type="button" data-cm="discard">discard</button><button class="btn sm" type="button" data-cm="draft">save draft</button><button class="btn sm pri" type="button" data-cm="send">send</button></div>`;
     $('#layer').appendChild(el); cmp = { el, d };
@@ -529,14 +538,15 @@
       if (!S.tok) return needAuth(() => { note.textContent = 'as ' + S.code; send(); });
       btn.disabled = true; btn.textContent = 'sending…';
       try {
-        const j = await api('compose', { to: v.to || 'everyone', subject: v.subject, body: v.body });
+        const j = await api('compose', { to: v.to || 'everyone', subject: v.subject, body: v.body, tag: d.tag });
         dropDraft(); close(); toast('Sent.'); S.seen[j.id] = 0; saveSeen();
-        S.folder = 'inbox'; S.fl = null; S.q = ''; $('#q').value = ''; $$('#folders [data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === 'inbox')); $$('#sideFloors [data-fl]').forEach(b => b.classList.remove('on'));
+        S.folder = 'inbox'; S.fl = null; S.tag = null; S.q = ''; $('#q').value = ''; $$('#folders [data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === 'inbox')); $$('#sideFloors [data-fl], #sideTags [data-tag]').forEach(b => b.classList.remove('on')); loadWire();
         await loadList(true); openThread(j.id); loadFloors(); goTo($('#inbox'), 76);
       } catch (e) { note.innerHTML = `<span class="err">${esc(e.message)}</span>`; btn.disabled = false; btn.textContent = 'send'; }
     }
     el.addEventListener('click', e => {
       const t = e.target.closest('[data-to]'); if (t) { f('to').value = t.dataset.to; markTo(); f('subject').focus(); return; }
+      const g = e.target.closest('[data-tg]'); if (g) { d.tag = d.tag === g.dataset.tg ? null : g.dataset.tg; $$('[data-tg]', el).forEach(x => x.classList.toggle('on', x.dataset.tg === d.tag)); return; }
       const b = e.target.closest('[data-cm]'); if (!b) return; const k = b.dataset.cm;
       if (k === 'min') el.classList.toggle('min');
       if (k === 'close') { if (keepDraft()) toast('Saved to drafts.'); close(); }
@@ -603,12 +613,175 @@
     else if (k === 'Escape' && S.open) closeRead();
   });
 
+  /* ---------------- live wire: every new mail and reply, as it lands ---------------- */
+  const wireBody = $('#wireBody'), WR = { keys: new Set(), loaded: false };
+  const wkey = x => x.kind + ':' + x.thread + ':' + x.at;
+  function wireLine(x, isNew) {
+    const d = document.createElement('div'); d.className = 'wl ' + x.kind + (isNew ? ' new' : ''); d.dataset.open = x.thread;
+    const t = new Date(x.at), tm = pad(t.getHours()) + ':' + pad(t.getMinutes()) + ':' + pad(t.getSeconds());
+    d.innerHTML = `<span class="tm">${tm}</span><span class="k">${x.kind === 'mail' ? 'MAIL' : 'RE'}</span><span class="who">${esc(x.codename)} <i>${esc(fname(x.floor).toUpperCase())}</i></span><span class="what">${x.kind === 'mail' ? `→ ${esc(x.to)} · ` : ''}<b>${esc(x.subject)}</b>${x.tag ? ` <i>#${esc(x.tag)}</i>` : ''} — ${esc(String(x.body || '').replace(/\s+/g, ' '))}</span>`;
+    return d;
+  }
+  async function loadWire() {
+    let j; try { j = await api('activity'); } catch (e) { if (!WR.keys.size) wireBody.innerHTML = `<div class="wwait">wire offline: ${esc(e.message)}</div>`; return; }
+    const items = (j.items || []).slice().reverse();
+    if (!items.length) { wireBody.innerHTML = `<div class="wwait">listening on every floor… no mail yet<i class="caret"></i></div>`; return; }
+    const w = $('.wwait', wireBody); if (w) w.remove();
+    const first = !WR.keys.size, fresh = items.filter(x => !WR.keys.has(wkey(x)));
+    fresh.forEach(x => { WR.keys.add(wkey(x)); wireBody.appendChild(wireLine(x, !first)); });
+    while (wireBody.children.length > 80) wireBody.firstChild.remove();
+    if (fresh.length) wireBody.scrollTo({ top: wireBody.scrollHeight, behavior: first || reduce ? 'auto' : 'smooth' });
+  }
+  wireBody.addEventListener('click', e => { const l = e.target.closest('[data-open]'); if (l) openThread(+l.dataset.open, true); });
+
+  /* ---------------- pulse: three anonymous questions a week ---------------- */
+  const PS = { data: null, fl: 'all', grown: false };
+  const xbar = (p, n = 26) => { const k = Math.round(Math.max(0, Math.min(1, p)) * n); return 'X'.repeat(k) + `<em>${'·'.repeat(n - k)}</em>`; };
+  async function loadPulse() { try { PS.data = await api('pulse'); renderPulse(); } catch (e) { if (!PS.data) $('#polls').innerHTML = `<div class="empty"><b>Pulse offline.</b><span>${esc(e.message)}</span></div>`; } }
+  function renderPulse(grow) {
+    const d = PS.data; if (!d) return;
+    $('#pWeek').textContent = `week ${String(d.week).split('-W')[1] || ''} · anonymous · resets monday`;
+    $('#pFloor').innerHTML = ['all', ...Object.keys(FLOOR_NAME)].map(f => `<button type="button" data-pf="${f}" class="${PS.fl === f ? 'on' : ''}">${f === 'all' ? 'all floors' : esc(FLOOR_NAME[f])}</button>`).join('');
+    $('#polls').innerHTML = d.questions.map(q => {
+      const counts = PS.fl === 'all' ? q.counts : (q.byFloor[PS.fl] || q.options.map(() => 0)), tot = counts.reduce((a, b) => a + b, 0);
+      return `<div class="poll"><div class="pq">${esc(q.q)}</div>${q.options.map((o, i) => { const p = tot ? counts[i] / tot : 0; return `<button type="button" class="popt${q.mine === i ? ' mine' : ''}" data-pq="${q.id}" data-pc="${i}"><span class="pl">${esc(o)}</span><span class="pp">${Math.round(p * 100)}%</span><span class="pb" data-p="${p}">${xbar(grow ? 0 : p)}</span></button>`; }).join('')}
+        <div class="pf">${plural(tot, 'vote')}${PS.fl !== 'all' ? ' on ' + esc(fname(PS.fl)) : ''} · ${q.mine != null ? 'you: ' + esc(q.options[q.mine]) : 'tap an answer to vote'}</div></div>`;
+    }).join('');
+    if (grow) growBars();
+  }
+  function growBars() {
+    $$('#polls .pb').forEach((el, i) => { const p = +el.dataset.p; if (reduce) { el.innerHTML = xbar(p); return; } const t0 = performance.now() + i * 40; const f = now => { const k = Math.max(0, Math.min(1, (now - t0) / 800)); el.innerHTML = xbar(p * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(f); }; requestAnimationFrame(f); });
+  }
+  new IntersectionObserver((es, o) => { if (es[0].isIntersecting && PS.data) { o.disconnect(); PS.grown = true; renderPulse(true); } }, { threshold: .25 }).observe($('#polls'));
+  $('#pFloor').addEventListener('click', e => { const b = e.target.closest('[data-pf]'); if (!b) return; PS.fl = b.dataset.pf; renderPulse(true); });
+  $('#polls').addEventListener('click', e => {
+    const b = e.target.closest('[data-pq]'); if (!b) return;
+    needAuth(async () => { try { await api('pulse', { q: b.dataset.pq, choice: +b.dataset.pc }); toast('Counted. Nobody sees who voted.'); await loadPulse(); } catch (x) { toast(x.message); } });
+  });
+
+  /* ---------------- office hours: when the building talks ---------------- */
+  const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], HCH = ['·', ':', '+', 'x', 'X'];
+  let heatDrawn = false, heatTip = '';
+  async function loadHeat() {
+    let j; try { j = await api('heat'); } catch (e) { if (!heatDrawn) $('#heat').innerHTML = `<div class="empty"><b>Clock offline.</b><span>${esc(e.message)}</span></div>`; return; }
+    const g = Array.from({ length: 7 }, () => new Array(24).fill(0)), mins = j.mins || [];
+    mins.forEach(m => { const d = new Date(m * 60000); g[(d.getDay() + 6) % 7][d.getHours()]++; });
+    const max = Math.max(0, ...g.flat()), lvl = v => !v ? 0 : Math.min(4, 1 + Math.floor(v / max * 3.999));
+    let best = null; g.forEach((r, di) => r.forEach((v, h) => { if (v && (!best || v > best.v)) best = { v, di, h }; }));
+    heatTip = mins.length ? `<b>${mins.length}</b> posts in the last 30 days · shown in your time zone` : 'No mail yet. The grid fills in as people post.';
+    $('#heat').innerHTML = `<div class="hg${heatDrawn ? ' still' : ''}"><span></span>${Array.from({ length: 24 }, (_, h) => `<span class="hl">${h % 3 === 0 ? pad(h) : ''}</span>`).join('')}${g.map((r, di) => `<span class="dl">${DAYS[di]}</span>${r.map((v, h) => `<span class="c l${lvl(v)}" data-h="${di},${h},${v}" style="--d:${h * 14 + di * 30}ms">${HCH[lvl(v)]}</span>`).join('')}`).join('')}</div>
+      <div class="hinfo"><span id="hTip">${heatTip}</span><span>${best ? `busiest: <b>${DAYS[best.di]} ${pad(best.h)}:00</b>` : ''}</span></div>`;
+    heatDrawn = true;
+  }
+  $('#heat').addEventListener('pointerover', e => { const c = e.target.closest('[data-h]'), tip = $('#hTip'); if (!tip) return; if (!c) { tip.innerHTML = heatTip; return; } const [di, h, v] = c.dataset.h.split(',').map(Number); tip.innerHTML = `<b>${DAYS[di]} ${pad(h)}:00–${pad((h + 1) % 24)}:00</b> · ${plural(v, 'post')}`; });
+  $('#heat').addEventListener('pointerleave', () => { const tip = $('#hTip'); if (tip) tip.innerHTML = heatTip; });
+
+  /* ---------------- top mail ---------------- */
+  const BT = { range: 'week' };
+  async function loadTop() {
+    let j; try { j = await api('top?range=' + BT.range); } catch (e) { $('#bList').innerHTML = `<div class="empty"><b>Ranking offline.</b><span>${esc(e.message)}</span></div>`; return; }
+    const T = j.threads || [];
+    $('#bList').innerHTML = T.length ? T.map((t, i) => `<button type="button" class="tr${i < 3 ? ' pod' : ''}" data-open="${t.id}" style="--i:${i}"><span class="rk">${pad(i + 1)}</span><span class="vt">+${t.votes}</span><span class="sj"><b>${esc(t.subject)}</b><span>to: ${esc(t.to)}${t.tag ? ' · #' + esc(t.tag) : ''}</span></span><span class="by">${esc(t.codename)} · ${esc(fname(t.floor))}</span><span class="rp">↩ ${t.replies}</span></button>`).join('')
+      : `<div class="empty"><b>Nothing ranked ${BT.range === 'all' ? 'yet' : 'this ' + BT.range}.</b><span>Mail with +1s and replies climbs here.</span></div>`;
+  }
+  $('#bTabs').addEventListener('click', e => { const b = e.target.closest('[data-r]'); if (!b) return; BT.range = b.dataset.r; $$('#bTabs [data-r]').forEach(x => x.classList.toggle('on', x === b)); loadTop(); });
+  $('#bList').addEventListener('click', e => { const b = e.target.closest('[data-open]'); if (b) openThread(+b.dataset.open, true); });
+
+  /* ---------------- the shell: the same real data, typed ---------------- */
+  const shOut = $('#shOut'), shIn = $('#shIn'), shLine = $('#shLine');
+  const SHH = { hist: store.json('xm:shh', []), i: -1 };
+  const CMDS = { help: 'list commands', ls: 'ls [inbox|hot|boss|starred|sent|following] [--floor eng] [--tag comp]', cat: 'cat <id>  read a mail and its replies', open: 'open <id>  open it in the inbox', search: 'search <words>', top: 'top [week|month|all]', floors: 'mail per floor', tags: 'list labels', pulse: "this week's pulse", whoami: 'who you are here', login: 'connect a wallet', logout: 'disconnect', compose: 'compose [to]', reply: 'reply <id> <text>', vote: 'vote <id>  +1 a mail', clear: 'clear the screen' };
+  function shPrint(html, cls = '') { const d = document.createElement('div'); d.className = 'ln ' + cls; d.innerHTML = html; shOut.insertBefore(d, shLine); shOut.scrollTop = shOut.scrollHeight; return d; }
+  const shRow = t => `<span data-open="${t.id}">#${String(t.id).padEnd(5)}</span>${('+' + t.votes).padEnd(5)}${('↩' + t.replies).padEnd(5)}to: ${esc(t.to)} · <b>${esc(t.subject)}</b>  <span class="dim">${esc(t.codename)} · ${esc(fname(t.floor))}${t.tag ? ' · #' + esc(t.tag) : ''}</span>`;
+  async function run(line) {
+    const raw = String(line || '').trim(); shPrint(`<span class="ps">${esc((S.code || 'anon') + '@xmail ~ %')}</span> ${esc(raw)}`, 'cmd'); if (!raw) return;
+    SHH.hist = [raw, ...SHH.hist.filter(x => x !== raw)].slice(0, 50); store.set('xm:shh', JSON.stringify(SHH.hist)); SHH.i = -1;
+    const [c0, ...args] = raw.split(/\s+/), cmd = c0.toLowerCase(), rest = raw.slice(c0.length).trim();
+    const flag = k => { const i = args.indexOf('--' + k); return i >= 0 ? args[i + 1] : null; };
+    const needIn = () => { if (S.tok) return false; shPrint('connect a wallet first: run <b>login</b>', 'err'); return true; };
+    try {
+      switch (cmd) {
+        case 'help': shPrint(Object.entries(CMDS).map(([k, v]) => `<b>${k.padEnd(9)}</b><span class="dim">${esc(v)}</span>`).join('\n')); break;
+        case 'clear': $$('.ln', shOut).forEach(x => x.remove()); break;
+        case 'ls': {
+          const f = ['inbox', 'hot', 'boss', 'starred', 'sent', 'following'].includes(args[0]) ? args[0] : 'inbox', p = new URLSearchParams({ folder: f });
+          if (flag('floor')) p.set('floor', flag('floor')); if (flag('tag')) p.set('tag', String(flag('tag')).replace(/^#/, ''));
+          const j = await api('threads?' + p); if (j.need) { needIn(); break; }
+          shPrint(j.threads.length ? j.threads.slice(0, 30).map(shRow).join('\n') + (j.threads.length > 30 ? `\n<span class="dim">…and ${j.threads.length - 30} more</span>` : '') : `<span class="dim">${f}: empty</span>`); break;
+        }
+        case 'cat': case 'read': {
+          const id = parseInt(String(args[0] || '').replace('#', ''), 10); if (!id) { shPrint('usage: cat <id>', 'err'); break; }
+          const j = await api('thread?id=' + id), t = j.thread;
+          shPrint(`<b>${esc(t.subject)}</b>\n<span class="dim">from ${esc(t.codename)} [${esc(fname(t.floor))}] · to ${esc(t.to)} · ${esc(full(t.at))} · ${plural(t.views || 0, 'view')}</span>\n\n${esc(t.body)}${j.msgs.map(m => `\n\n  ↳ <b>${esc(m.codename)}</b> <span class="dim">[${esc(fname(m.floor))}] ${esc(when(m.at))}</span>\n    ${m.hidden ? '<span class="dim">[removed]</span>' : esc(m.body).replace(/\n/g, '\n    ')}`).join('')}\n\n<span class="dim">+${t.votes} · ↩ ${t.replies} · </span><span data-open="${t.id}">open in inbox</span>`); break;
+        }
+        case 'open': { const id = parseInt(String(args[0] || '').replace('#', ''), 10); if (!id) { shPrint('usage: open <id>', 'err'); break; } shPrint('opening #' + id + '…', 'dim'); openThread(id, true); break; }
+        case 'search': case 'grep': case 'find': {
+          if (!rest) { shPrint('usage: search <words>', 'err'); break; }
+          const j = await api('threads?' + new URLSearchParams({ folder: 'inbox', q: rest.slice(0, 60) }));
+          shPrint(j.threads.length ? j.threads.slice(0, 30).map(shRow).join('\n') : `<span class="dim">no match for “${esc(rest)}”</span>`); break;
+        }
+        case 'top': { const r = ['week', 'month', 'all'].includes(args[0]) ? args[0] : 'week', j = await api('top?range=' + r); shPrint(j.threads.length ? j.threads.slice(0, 15).map(shRow).join('\n') : `<span class="dim">nothing ranked ${r === 'all' ? 'yet' : 'this ' + r}</span>`); break; }
+        case 'floors': case 'directory': {
+          const j = await api('floors');
+          shPrint(j.floors.map(f => `${(FLOOR_NO[f.id] === 'EXIT' ? 'EXIT' : 'FL ' + FLOOR_NO[f.id]).padEnd(7)}${esc(f.name).padEnd(10)}${String(f.threads).padStart(5)} mails${String(f.today).padStart(5)} today${String(f.people).padStart(6)} people`).join('\n') + `\n\n<span class="dim">${j.totals.online} online · ${plural(j.totals.people, 'person').replace('persons', 'people')} · ${plural(j.totals.threads, 'mail')} · ${plural(j.totals.replies, 'reply').replace('replys', 'replies')}</span>`); break;
+        }
+        case 'tags': case 'labels': shPrint(TAGS.map(t => '#' + t).join('  ') + '\n<span class="dim">try: ls --tag comp</span>'); break;
+        case 'pulse': {
+          const j = await api('pulse');
+          shPrint(j.questions.map(q => `<b>${esc(q.q)}</b> <span class="dim">${plural(q.total, 'vote')}</span>\n` + q.options.map((o, i) => { const p = q.total ? q.counts[i] / q.total : 0; return `  ${esc(o).padEnd(19)}${xbar(p, 20)} ${String(Math.round(p * 100)).padStart(3)}%${q.mine === i ? ' <span class="dim">← you</span>' : ''}`; }).join('\n')).join('\n\n')); break;
+        }
+        case 'whoami': shPrint(S.code ? `${esc(S.code)} · ${esc(fname(S.floor))} floor · wallet hidden` : 'anon. run <b>login</b> to get a codename.'); break;
+        case 'login': if (S.tok) shPrint('already signed in as ' + esc(S.code)); else signInDialog(() => shPrint('signed in as ' + esc(S.code))); break;
+        case 'logout': if (!S.tok) shPrint('not signed in', 'dim'); else { signOut(); shPrint('bye.'); } break;
+        case 'compose': case 'mail': case 'write': needAuth(() => openCompose(null, rest)); shPrint('compose window open', 'dim'); break;
+        case 'reply': {
+          const id = parseInt(String(args[0] || '').replace('#', ''), 10), body = rest.replace(/^\S+\s*/, '');
+          if (!id || !body) { shPrint('usage: reply <id> <text>', 'err'); break; } if (needIn()) break;
+          await api('reply', { thread: id, body }); shPrint(`replied to #${id}.`); if (S.open === id) refreshThread(true); loadWire(); break;
+        }
+        case 'vote': case '+1': { const id = parseInt(String(args[0] || '').replace('#', ''), 10); if (!id) { shPrint('usage: vote <id>', 'err'); break; } if (needIn()) break; const j = await api('vote', { kind: 't', id }); shPrint(j.voted ? `+1 on #${id}` : `took back your +1 on #${id}`); break; }
+        case 'sudo': shPrint('nice try. this incident will be reported.', 'err'); break;
+        case 'elon': shPrint('elon is not in the sudoers file.', 'err'); break;
+        case 'exit': case 'quit': shPrint('there is no exit. only reply all.', 'dim'); break;
+        default: shPrint(`command not found: ${esc(c0)}. try <b>help</b>`, 'err');
+      }
+    } catch (e) { shPrint(esc(e.message), 'err'); }
+  }
+  shIn.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); const v = shIn.value; shIn.value = ''; run(v); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); if (SHH.i < SHH.hist.length - 1) shIn.value = SHH.hist[++SHH.i] || ''; }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); SHH.i = Math.max(-1, SHH.i - 1); shIn.value = SHH.i < 0 ? '' : SHH.hist[SHH.i]; }
+    else if (e.key === 'Tab') { e.preventDefault(); const v = shIn.value.trim().toLowerCase(), m = Object.keys(CMDS).filter(k => k.startsWith(v)); if (m.length === 1) shIn.value = m[0] + ' '; else if (m.length > 1) shPrint(m.join('  '), 'dim'); }
+    else if (e.key === 'l' && e.ctrlKey) { e.preventDefault(); $$('.ln', shOut).forEach(x => x.remove()); }
+    else if (e.key === 'Escape') shIn.blur();
+  });
+  $('#sh').addEventListener('click', e => { const o = e.target.closest('[data-open]'); if (o) return openThread(+o.dataset.open, true); if (!String(getSelection() || '')) shIn.focus({ preventScroll: true }); });
+  let shBooted = false;
+  new IntersectionObserver((es, o) => {
+    if (!es[0].isIntersecting || shBooted) return; shBooted = true; o.disconnect();
+    shPrint(`<span class="dim">${ENV_SMALL}</span>\nxmail shell · the same live data as the inbox · try <b>ls</b>, <b>top</b>, <b>pulse</b>\n`);
+    const t = 'help'; if (reduce) return run(t);
+    let i = 0; const step = () => { shIn.value = t.slice(0, ++i); if (i < t.length) setTimeout(step, 110); else setTimeout(() => { shIn.value = ''; run(t); }, 280); }; setTimeout(step, 600);
+  }, { threshold: .35 }).observe($('#sh'));
+
+  /* sections refresh as they scroll into view */
+  const fresh = { hours: loadHeat, best: loadTop, pulse: loadPulse, live: loadWire };
+  new IntersectionObserver(es => es.forEach(e => { if (!e.isIntersecting) return; const f = fresh[e.target.id], t = Date.now(); if (f && t - (e.target._t || 0) > 4000) { e.target._t = t; f(); } }), { rootMargin: '0px 0px -10% 0px' }).observe($('#hours'));
+  ['best', 'pulse', 'live'].forEach(id => { const el = $('#' + id); new IntersectionObserver(es => es.forEach(e => { if (!e.isIntersecting) return; const t = Date.now(); if (t - (el._t || 0) > 4000) { el._t = t; fresh[id](); } }), { rootMargin: '0px 0px -10% 0px' }).observe(el); });
+
+  /* sections refresh as they scroll into view */
+  const REFRESH = { hours: () => loadHeat(), best: () => loadTop(), pulse: () => loadPulse(), live: () => loadWire() };
+  Object.keys(REFRESH).forEach(id => { const el = $("#" + id); new IntersectionObserver(es => es.forEach(e => { if (!e.isIntersecting) return; const t = Date.now(); if (t - (el._t || 0) > 4000) { el._t = t; REFRESH[id](); } }), { rootMargin: '0px 0px -10% 0px' }).observe(el); });
+
   /* ---------------- start ---------------- */
   renderMe(); saveDrafts(); renderSideFloors(); renderRead();
-  loadCfg(); loadFloors(); loadList();
+  loadCfg(); loadFloors(); loadList(); loadWire(); loadPulse(); loadHeat(); loadTop();
   const deep = parseInt(new URLSearchParams(location.search).get('m'), 10); if (deep) setTimeout(() => openThread(deep, true), 500);
   setInterval(() => { if (document.hidden) return; if (S.folder !== 'drafts') loadList(true); if (S.open) refreshThread(); }, 8000);
   setInterval(() => { if (!document.hidden) loadFloors(); }, 30000);
+  setInterval(() => { if (!document.hidden) loadWire(); }, 6000);
+  setInterval(() => { if (!document.hidden) { loadPulse(); loadTop(); } }, 45000);
+  setInterval(() => { if (!document.hidden) loadHeat(); }, 120000);
   setInterval(() => { if (!document.hidden && S.tok) api('me').then(j => setMe(j.codename, j.floor)).catch(() => { }); }, 60000);
   if (S.tok) api('me').then(j => setMe(j.codename, j.floor)).catch(() => { });
 })();
