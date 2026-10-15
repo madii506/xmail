@@ -16,6 +16,14 @@ const FLOOR_NAME = { eng: 'Eng', grok: 'Grok', ads: 'Ads', payments: 'Payments',
 const NAME_RE = /^[a-z0-9_.]{3,16}$/;
 const RESERVED = /^(admin|mod|mods|moderator|xmail|x|xcorp|elon|elonmusk|musk|support|official|team|staff|system|root|hr|legal|security)$/;
 const HIDE_AT = 3;   // reports from 3 different people hide a message
+const TAGS = ['comp', 'layoffs', 'culture', 'product', 'rumor', 'ama', 'vent', 'jobs'];
+const PULSE = [
+  { id: 'morale', q: 'Morale on your floor this week?', options: ['shipping', 'fine', 'meh', 'rough', 'burning'] },
+  { id: 'hours', q: 'Hours you worked last week?', options: ['under 40', '40 to 60', '60 to 80', '80+'] },
+  { id: 'stay', q: 'Still here in six months?', options: ['yes', 'probably', 'updating linkedin', 'already gone'] },
+];
+function isoWeek(d = new Date()) { const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); const day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day); const y = t.getUTCFullYear(); return y + '-W' + String(Math.ceil(((t - Date.UTC(y, 0, 1)) / 864e5 + 1) / 7)).padStart(2, '0'); }
+const seenView = new Map();
 
 /* ---------------- plumbing ---------------- */
 function send(res, code, body) { res.statusCode = code; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); res.end(JSON.stringify(body)); }
@@ -93,6 +101,9 @@ async function ensure() {
     await s`CREATE TABLE IF NOT EXISTS xm_votes (kind TEXT, item BIGINT, wallet TEXT, PRIMARY KEY (kind, item, wallet))`;
     await s`CREATE TABLE IF NOT EXISTS xm_reports (kind TEXT, item BIGINT, wallet TEXT, PRIMARY KEY (kind, item, wallet))`;
     await s`CREATE TABLE IF NOT EXISTS xm_stars (wallet TEXT, thread BIGINT, PRIMARY KEY (wallet, thread))`;
+    await s`ALTER TABLE xm_threads ADD COLUMN IF NOT EXISTS tag TEXT`;
+    await s`ALTER TABLE xm_threads ADD COLUMN IF NOT EXISTS views INT DEFAULT 0`;
+    await s`CREATE TABLE IF NOT EXISTS xm_pulse (q TEXT, wallet TEXT, week TEXT, floor TEXT, choice INT, at TIMESTAMPTZ DEFAULT now(), PRIMARY KEY (q, wallet, week))`;
   })();
   try { await ready; } catch (e) { ready = null; throw e; }
   return ready;
@@ -132,12 +143,12 @@ async function gate(wallet) {
 }
 
 /* ---------------- shapes sent to the page (never a wallet) ---------------- */
-const pubThread = (t, me) => ({ id: Number(t.id), codename: t.codename, floor: t.floor, to: t.to_name, subject: t.subject, preview: t.body ? t.body.slice(0, 140) : '', replies: t.replies, votes: t.votes, at: t.at, last: t.last_at, mine: !!me && t.author === me, voted: !!t.voted, starred: !!t.starred });
+const pubThread = (t, me) => ({ id: Number(t.id), codename: t.codename, floor: t.floor, to: t.to_name, subject: t.subject, preview: t.body ? t.body.slice(0, 140) : '', replies: t.replies, votes: t.votes, at: t.at, last: t.last_at, tag: t.tag || null, views: t.views || 0, mine: !!me && t.author === me, voted: !!t.voted, starred: !!t.starred });
 const pubMsg = (m, me) => ({ id: Number(m.id), codename: m.codename, floor: m.floor, body: m.hidden ? null : m.body, hidden: m.hidden, votes: m.votes, at: m.at, mine: !!me && m.author === me, voted: !!m.voted });
 
 /* ---------------- routes ---------------- */
 const R = {};
-R['GET config'] = async () => ({ ca: CA || null, x: XH || null, floors: FLOORS.map(f => ({ id: f, name: FLOOR_NAME[f] })), gate: CA && MIN_PCT ? MIN_PCT : 0 });
+R['GET config'] = async () => ({ ca: CA || null, x: XH || null, floors: FLOORS.map(f => ({ id: f, name: FLOOR_NAME[f] })), tags: TAGS, pulse: PULSE.map(p => p.id), gate: CA && MIN_PCT ? MIN_PCT : 0 });
 
 R['GET nonce'] = async ({ q, req }) => {
   const wallet = String(q.wallet || ''); if (!B58.test(wallet)) throw http(400, 'Bad wallet.');
@@ -184,9 +195,12 @@ R['POST profile'] = async ({ b, me }) => {
 R['GET threads'] = async ({ q, me }) => {
   const s = db(), folder = String(q.folder || 'inbox'), floor = FLOORS.includes(q.floor) ? q.floor : null;
   const term = clean(q.q || '').trim().slice(0, 60), like = '%' + term.replace(/[%_\\]/g, m => '\\' + m) + '%';
-  const meW = me || '';
+  const meW = me || '', tag = TAGS.includes(q.tag) ? q.tag : null, top = q.sort === 'top';
   let rows;
-  if (folder === 'starred') {
+  if (folder === 'following') {
+    if (!me) return { threads: [], need: 'login' };
+    rows = await s`SELECT t.*, EXISTS (SELECT 1 FROM xm_stars st WHERE st.thread=t.id AND st.wallet=${meW}) AS starred, EXISTS (SELECT 1 FROM xm_votes v WHERE v.kind='t' AND v.item=t.id AND v.wallet=${meW}) AS voted FROM xm_threads t WHERE NOT t.hidden AND (t.author=${me} OR EXISTS (SELECT 1 FROM xm_msgs m WHERE m.thread=t.id AND m.author=${me})) ORDER BY t.last_at DESC LIMIT 100`;
+  } else if (folder === 'starred') {
     if (!me) return { threads: [], need: 'login' };
     rows = await s`SELECT t.*, true AS starred, EXISTS (SELECT 1 FROM xm_votes v WHERE v.kind='t' AND v.item=t.id AND v.wallet=${meW}) AS voted FROM xm_threads t JOIN xm_stars st ON st.thread=t.id AND st.wallet=${me} WHERE NOT t.hidden ORDER BY t.last_at DESC LIMIT 100`;
   } else if (folder === 'sent') {
@@ -197,15 +211,17 @@ R['GET threads'] = async ({ q, me }) => {
   } else if (folder === 'boss') {
     rows = await s`SELECT t.*, EXISTS (SELECT 1 FROM xm_stars st WHERE st.thread=t.id AND st.wallet=${meW}) AS starred, EXISTS (SELECT 1 FROM xm_votes v WHERE v.kind='t' AND v.item=t.id AND v.wallet=${meW}) AS voted FROM xm_threads t WHERE NOT t.hidden AND lower(t.to_name) IN ('elon', 'elonmusk', '@elonmusk', 'the boss', 'boss') ORDER BY t.last_at DESC LIMIT 100`;
   } else {
-    rows = await s`SELECT t.*, EXISTS (SELECT 1 FROM xm_stars st WHERE st.thread=t.id AND st.wallet=${meW}) AS starred, EXISTS (SELECT 1 FROM xm_votes v WHERE v.kind='t' AND v.item=t.id AND v.wallet=${meW}) AS voted FROM xm_threads t WHERE NOT t.hidden AND (${floor}::text IS NULL OR t.floor=${floor}) AND (${term} = '' OR t.subject ILIKE ${like} OR t.body ILIKE ${like} OR t.to_name ILIKE ${like} OR t.codename ILIKE ${like}) ORDER BY t.last_at DESC LIMIT 100`;
+    rows = await s`SELECT t.*, EXISTS (SELECT 1 FROM xm_stars st WHERE st.thread=t.id AND st.wallet=${meW}) AS starred, EXISTS (SELECT 1 FROM xm_votes v WHERE v.kind='t' AND v.item=t.id AND v.wallet=${meW}) AS voted FROM xm_threads t WHERE NOT t.hidden AND (${floor}::text IS NULL OR t.floor=${floor}) AND (${tag}::text IS NULL OR t.tag=${tag}) AND (${term} = '' OR t.subject ILIKE ${like} OR t.body ILIKE ${like} OR t.to_name ILIKE ${like} OR t.codename ILIKE ${like}) ORDER BY CASE WHEN ${top}::boolean THEN t.votes * 2 + t.replies ELSE 0 END DESC, t.last_at DESC LIMIT 100`;
   }
   return { threads: rows.map(t => pubThread(t, me)) };
 };
-R['GET thread'] = async ({ q, me }) => {
+R['GET thread'] = async ({ q, me, req }) => {
   const id = parseInt(q.id, 10); if (!id) throw http(400, 'No such mail.');
   const s = db(), meW = me || '';
   const t = (await s`SELECT t.*, EXISTS (SELECT 1 FROM xm_stars st WHERE st.thread=t.id AND st.wallet=${meW}) AS starred, EXISTS (SELECT 1 FROM xm_votes v WHERE v.kind='t' AND v.item=t.id AND v.wallet=${meW}) AS voted FROM xm_threads t WHERE t.id=${id}`)[0];
   if (!t || t.hidden) throw http(404, 'That mail is gone.');
+  const vk = (me || String(req.headers['x-forwarded-for'] || req.socket && req.socket.remoteAddress || 'x').split(',')[0].trim()) + ':' + id;
+  if (!seenView.has(vk)) { seenView.set(vk, 1); if (seenView.size > 20000) seenView.clear(); await s`UPDATE xm_threads SET views=views+1 WHERE id=${id}`; t.views = (t.views || 0) + 1; }
   const msgs = await s`SELECT m.*, EXISTS (SELECT 1 FROM xm_votes v WHERE v.kind='m' AND v.item=m.id AND v.wallet=${meW}) AS voted FROM xm_msgs m WHERE m.thread=${id} ORDER BY m.id ASC LIMIT 500`;
   return { thread: { ...pubThread(t, me), body: t.body, hidden: t.hidden }, msgs: msgs.map(m => pubMsg(m, me)) };
 };
@@ -213,11 +229,11 @@ R['POST compose'] = async ({ b, me }) => {
   if (!me) throw http(401, 'Connect a wallet first.');
   const u = await user(me); if (!u) throw http(401, 'Connect a wallet first.');
   limit('c:' + me, 3, 10 * 60e3, 'Three new mails per 10 minutes. Reply instead.');
-  const to = tidy(b.to || 'everyone', 40).replace(/\n/g, ' ') || 'everyone', subject = tidy(b.subject, 120).replace(/\n/g, ' '), body = tidy(b.body, 4000);
+  const tag = TAGS.includes(b.tag) ? b.tag : null, to = tidy(b.to || 'everyone', 40).replace(/\n/g, ' ') || 'everyone', subject = tidy(b.subject, 120).replace(/\n/g, ' '), body = tidy(b.body, 4000);
   if (subject.length < 2) throw http(400, 'Add a subject.');
   if (body.length < 2) throw http(400, 'Write something.');
   await gate(me);
-  const r = await db()`INSERT INTO xm_threads (author, codename, floor, to_name, subject, body) VALUES (${me}, ${u.codename}, ${u.floor}, ${to}, ${subject}, ${body}) RETURNING id`;
+  const r = await db()`INSERT INTO xm_threads (author, codename, floor, to_name, subject, body, tag) VALUES (${me}, ${u.codename}, ${u.floor}, ${to}, ${subject}, ${body}, ${tag}) RETURNING id`;
   return { ok: true, id: Number(r[0].id) };
 };
 R['POST reply'] = async ({ b, me }) => {
@@ -273,6 +289,48 @@ R['GET floors'] = async () => {
   const t = (await db()`SELECT (SELECT count(*) FROM xm_threads WHERE NOT hidden)::int AS threads, (SELECT count(*) FROM xm_msgs WHERE NOT hidden)::int AS replies, (SELECT count(*) FROM xm_users)::int AS people, (SELECT count(*) FROM xm_users WHERE seen > now() - interval '10 minutes')::int AS online`)[0];
   const by = Object.fromEntries(rows.map(r => [r.floor, r])), pp = Object.fromEntries(people.map(r => [r.floor, r.n]));
   return { floors: FLOORS.map(f => ({ id: f, name: FLOOR_NAME[f], threads: by[f] ? by[f].threads : 0, today: by[f] ? by[f].today : 0, last: by[f] ? by[f].last : null, people: pp[f] || 0 })), totals: t };
+};
+
+/* live wire: the latest mail and replies across every floor */
+R['GET activity'] = async () => {
+  const s = db();
+  const a = await s`SELECT 'mail' AS kind, t.id AS thread, t.subject, t.to_name, t.codename, t.floor, t.tag, left(t.body, 140) AS body, t.at FROM xm_threads t WHERE NOT t.hidden ORDER BY t.at DESC LIMIT 30`;
+  const b = await s`SELECT 'reply' AS kind, m.thread, t.subject, t.to_name, m.codename, m.floor, t.tag, left(m.body, 140) AS body, m.at FROM xm_msgs m JOIN xm_threads t ON t.id=m.thread WHERE NOT m.hidden AND NOT t.hidden ORDER BY m.at DESC LIMIT 30`;
+  const all = a.concat(b).sort((x, y) => new Date(y.at) - new Date(x.at)).slice(0, 40);
+  return { items: all.map(x => ({ kind: x.kind, thread: Number(x.thread), subject: x.subject, to: x.to_name, codename: x.codename, floor: x.floor, tag: x.tag, body: x.body, at: x.at })) };
+};
+/* office hours: when people post, last 30 days (minutes since epoch; the page buckets them in the viewer's time zone) */
+R['GET heat'] = async () => {
+  const r = await db()`SELECT (extract(epoch FROM x.at) / 60)::bigint AS m FROM (SELECT at FROM xm_threads WHERE NOT hidden AND at > now() - interval '30 days' UNION ALL SELECT at FROM xm_msgs WHERE NOT hidden AND at > now() - interval '30 days') x ORDER BY x.at DESC LIMIT 5000`;
+  return { mins: r.map(x => Number(x.m)) };
+};
+R['GET top'] = async ({ q, me }) => {
+  const range = ['week', 'month', 'all'].includes(q.range) ? q.range : 'week', days = range === 'week' ? 7 : range === 'month' ? 30 : 36500, meW = me || '';
+  const rows = await db()`SELECT t.*, EXISTS (SELECT 1 FROM xm_stars st WHERE st.thread=t.id AND st.wallet=${meW}) AS starred, EXISTS (SELECT 1 FROM xm_votes v WHERE v.kind='t' AND v.item=t.id AND v.wallet=${meW}) AS voted FROM xm_threads t WHERE NOT t.hidden AND t.at > now() - make_interval(days => ${days}::int) AND (t.votes > 0 OR t.replies > 0) ORDER BY t.votes DESC, t.replies DESC, t.at DESC LIMIT 25`;
+  return { range, threads: rows.map(t => pubThread(t, me)) };
+};
+/* pulse: three anonymous questions, one answer per wallet per week */
+R['GET pulse'] = async ({ me }) => {
+  const week = isoWeek(), s = db();
+  const rows = await s`SELECT q, floor, choice, count(*)::int AS n FROM xm_pulse WHERE week=${week} GROUP BY q, floor, choice`;
+  const mine = me ? await s`SELECT q, choice FROM xm_pulse WHERE week=${week} AND wallet=${me}` : [];
+  return {
+    week, questions: PULSE.map(p => {
+      const counts = p.options.map(() => 0), byFloor = {};
+      rows.filter(r => r.q === p.id && r.choice >= 0 && r.choice < p.options.length).forEach(r => { counts[r.choice] += r.n; const f = r.floor || 'other'; (byFloor[f] = byFloor[f] || p.options.map(() => 0))[r.choice] += r.n; });
+      const m = mine.find(x => x.q === p.id);
+      return { id: p.id, q: p.q, options: p.options, counts, byFloor, total: counts.reduce((a, b) => a + b, 0), mine: m ? m.choice : null };
+    }),
+  };
+};
+R['POST pulse'] = async ({ b, me }) => {
+  if (!me) throw http(401, 'Connect a wallet first.');
+  const p = PULSE.find(x => x.id === b.q), c = parseInt(b.choice, 10);
+  if (!p || !(c >= 0 && c < p.options.length)) throw http(400, 'Pick an answer.');
+  limit('pl:' + me, 30, 3600e3);
+  const u = await user(me); if (!u) throw http(401, 'Connect a wallet first.');
+  await db()`INSERT INTO xm_pulse (q, wallet, week, floor, choice) VALUES (${p.id}, ${me}, ${isoWeek()}, ${u.floor}, ${c}) ON CONFLICT (q, wallet, week) DO UPDATE SET choice=EXCLUDED.choice, floor=EXCLUDED.floor, at=now()`;
+  return { ok: true };
 };
 
 module.exports = async (req, res) => {
