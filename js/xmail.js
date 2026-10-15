@@ -82,13 +82,31 @@
   $$('.rv, .h2').forEach(el => io.observe(el));
   const nav = $('#nav'), navState = () => nav.classList.toggle('scrolled', scrollY > 8);
   addEventListener('scroll', navState, { passive: true }); navState();
-  const navLinks = $$('#links a'), ind = $('#ind'), secs = navLinks.map(a => $('#' + a.dataset.s));
+  const navLinks = $$('#links a'), ind = $('#ind');
   function moveInd(a) { navLinks.forEach(x => x.classList.toggle('on', x === a)); if (!a) { ind.style.opacity = 0; return; } ind.style.opacity = 1; ind.style.width = a.offsetWidth + 'px'; ind.style.transform = `translateX(${a.offsetLeft - 4}px)`; }
-  function spy() { let cur = -1; secs.forEach((s, i) => { if (s && s.getBoundingClientRect().top < innerHeight * .45) cur = i; }); moveInd(navLinks[cur]); }
+  function spy() {
+    const pg = document.body.dataset.page; let cur = navLinks.find(a => a.dataset.pg === pg && !a.dataset.s);
+    navLinks.forEach(a => { if (a.dataset.pg !== pg || !a.dataset.s) return; const s = $('#' + a.dataset.s); if (s && s.offsetParent && s.getBoundingClientRect().top < innerHeight * .45) cur = a; });
+    moveInd(cur);
+  }
+  /* two pages, one document: home and inbox */
+  function setPage(p, push) {
+    const was = document.body.dataset.page; if (was === p) return false;
+    document.body.dataset.page = p;
+    if (push !== false) { try { history.pushState({ p }, '', p === 'inbox' ? '/inbox' + (S.open ? '?m=' + S.open : '') : '/'); } catch (e) { } }
+    if (lenis) { lenis.scrollTo(0, { immediate: true, force: true }); lenis.resize(); } else scrollTo(0, 0);
+    const mn = $('main'); if (mn.animate && !reduce) mn.animate([{ opacity: 0, transform: 'translateY(14px)' }, { opacity: 1, transform: 'none' }], { duration: 520, easing: 'cubic-bezier(.2,.75,.2,1)' });
+    setTimeout(() => { $$('.rv:not(.vis)').forEach(el => { if (el.offsetParent && el.getBoundingClientRect().top < innerHeight) el.classList.add('vis'); }); dispatchEvent(new Event('resize')); spy(); }, 60);
+    return true;
+  }
+  const toInbox = () => { setPage('inbox'); if (scrollY > 40) goTo($('#inbox'), 0); };
+  addEventListener('popstate', () => setPage(/^\/inbox/.test(location.pathname) ? 'inbox' : 'home', false));
   addEventListener('scroll', spy, { passive: true }); addEventListener('resize', spy); spy();
   document.addEventListener('click', e => {
-    const a = e.target.closest('a[data-s], a[data-go]'); if (!a) return; e.preventDefault();
-    goTo($('#' + (a.dataset.s || a.dataset.go)), a.dataset.s === 'inbox' || a.dataset.go === 'inbox' ? 76 : 70);
+    const a = e.target.closest('a[data-pg], a[data-go]'); if (!a) return; e.preventDefault();
+    if (a.dataset.go === 'inbox') return toInbox();
+    const changed = setPage(a.dataset.pg), sec = a.dataset.s && $('#' + a.dataset.s);
+    if (sec) setTimeout(() => goTo(sec, 70), changed ? 120 : 0); else if (!changed) goTo(document.body, 0);
   });
 
   /* the hook types itself */
@@ -141,18 +159,31 @@
   })();
 
   /* ---------------- the envelope, drawn in characters ---------------- */
-  function asciiEnv(c, { cw = 9, ch = 15, font = 13, sweep = true } = {}) {
+  function envMask(g, W, H) {
+    const ew = Math.min(W * .9, H / .7 * .9), eh = ew * .7, s = ew * .076, ox = (W - ew) / 2, oy = (H - eh) / 2;
+    g.strokeStyle = '#fff'; g.lineWidth = s; g.lineJoin = 'miter';
+    g.strokeRect(ox + s / 2, oy + s / 2, ew - s, eh - s);
+    g.beginPath(); g.moveTo(ox + s * .9, oy + s * .9); g.lineTo(ox + ew - s * .9, oy + eh - s * .9); g.moveTo(ox + ew - s * .9, oy + s * .9); g.lineTo(ox + s * .9, oy + eh - s * .9); g.stroke();
+  }
+  /* the wordmark: a two-stroke X and "mail", the same lockup as the banner */
+  function wordLayout(g, h) { g.font = `800 ${h * 1.16}px I, Inter, sans-serif`; const mw = g.measureText('mail').width, xw = h * .84; return { xw, gap: h * .07, mw, w: xw + h * .07 + mw }; }
+  function wordMask(g, W, H) {
+    const h = Math.min(H * .92, W / 3.5), L = wordLayout(g, h), ox = (W - L.w) / 2, oy = (H - h) / 2, s = h * .25;
+    g.save(); g.beginPath(); g.rect(ox, oy, L.xw, h); g.clip();
+    g.strokeStyle = '#fff'; g.lineWidth = s; g.lineCap = 'butt';
+    g.beginPath(); g.moveTo(ox - s, oy - s * 1.2); g.lineTo(ox + L.xw + s, oy + h + s * 1.2); g.moveTo(ox + L.xw + s, oy - s * 1.2); g.lineTo(ox - s, oy + h + s * 1.2); g.stroke(); g.restore();
+    g.fillStyle = '#fff'; g.textBaseline = 'alphabetic'; wordLayout(g, h); g.fillText('mail', ox + L.xw + L.gap, oy + h);
+  }
+  function asciiEnv(c, { cw = 9, ch = 15, font = 13, sweep = true, mask = envMask, solid = false, ratio = 0, dots = true } = {}) {
     const x = c.getContext('2d'); if (!x) return;
     let W, H, cols, rows, cov, glitch = new Map(), t0 = performance.now(), on = true, raf, MX = { x: -999, y: -999 };
     function build() {
+      if (ratio) { const w0 = c.getBoundingClientRect().width; if (w0) c.style.height = Math.round(w0 / ratio) + 'px'; }
       const dpr = Math.min(2, devicePixelRatio || 1), rc = c.getBoundingClientRect(); W = rc.width; H = rc.height; if (!W || !H) return false;
       c.width = W * dpr; c.height = H * dpr; x.setTransform(dpr, 0, 0, dpr, 0, 0);
       cols = Math.floor(W / cw); rows = Math.floor(H / ch);
       const m = document.createElement('canvas'); m.width = cols * cw; m.height = rows * ch; const g = m.getContext('2d');
-      const ew = Math.min(m.width * .9, m.height / .7 * .9), eh = ew * .7, s = ew * .076, ox = (m.width - ew) / 2, oy = (m.height - eh) / 2;
-      g.strokeStyle = '#fff'; g.lineWidth = s; g.lineJoin = 'miter';
-      g.strokeRect(ox + s / 2, oy + s / 2, ew - s, eh - s);
-      g.beginPath(); g.moveTo(ox + s * .9, oy + s * .9); g.lineTo(ox + ew - s * .9, oy + eh - s * .9); g.moveTo(ox + ew - s * .9, oy + s * .9); g.lineTo(ox + s * .9, oy + eh - s * .9); g.stroke();
+      mask(g, m.width, m.height);
       const d = g.getImageData(0, 0, m.width, m.height).data; cov = new Float32Array(cols * rows);
       for (let r = 0; r < rows; r++) for (let k = 0; k < cols; k++) {
         let sum = 0, n = 0; for (let yy = r * ch; yy < r * ch + ch; yy += 2) for (let xx = k * cw; xx < k * cw + cw; xx += 2) { sum += d[(yy * m.width + xx) * 4]; n++; }
@@ -167,8 +198,9 @@
       if (!reduce && Math.random() < .5) { const i = Math.random() * cov.length | 0; if (cov[i] > .24) glitch.set(i, { ch: GL[Math.random() * GL.length | 0], until: ts + 120 + Math.random() * 300 }); }
       for (let r = 0; r < rows; r++) for (let k = 0; k < cols; k++) {
         const i = r * cols + k, v = cov[i]; let chr, a;
-        if (v >= .5) { chr = 'X'; a = .95; } else if (v >= .24) { chr = 'x'; a = .5; } else { if (((k * 7 + r * 13) % 23) === 0) { chr = '.'; a = .12; } else continue; }
-        if (sweep && !reduce) { const p = (k + r * 1.7) * .09 - t * 1.6; const w = Math.pow(Math.max(0, Math.sin(p)), 14); a = Math.min(1, a * (.62 + .38 * w) + w * .2); }
+        if (solid) { if (v >= .42) { chr = 'X'; a = .95; } else continue; }
+        else if (v >= .5) { chr = 'X'; a = .95; } else if (v >= .24) { chr = 'x'; a = .5; } else { if (dots && ((k * 7 + r * 13) % 23) === 0) { chr = '.'; a = .12; } else continue; }
+        if (sweep && !reduce) { const p = (k + r * 1.7) * .09 - t * 1.6; const w = Math.pow(Math.max(0, Math.sin(p)), 14); a = solid ? .78 + .22 * w : Math.min(1, a * (.62 + .38 * w) + w * .2); }
         const g = glitch.get(i); if (g) { if (g.until < ts) glitch.delete(i); else chr = g.ch; }
         const dx = k - mc, dy = (r - mr) * 1.6, dd = dx * dx + dy * dy; if (dd < 30 && v >= .24) { chr = GL[(Math.random() * GL.length) | 0]; a = 1; }
         x.fillStyle = `rgba(231,233,234,${a.toFixed(3)})`; x.fillText(chr, ox + k * cw, oy + r * ch);
@@ -183,7 +215,12 @@
     document.fonts && document.fonts.ready.then(start); if (!document.fonts) start();
     return { stop: () => cancelAnimationFrame(raf) };
   }
-  asciiEnv($('#henv'), { cw: innerWidth < 700 ? 6 : 9, ch: innerWidth < 700 ? 10 : 15, font: innerWidth < 700 ? 9 : 13 });
+  asciiEnv($('#henv'), { cw: innerWidth < 700 ? 5 : 7, ch: innerWidth < 700 ? 8 : 12, font: innerWidth < 700 ? 8 : 10.5 });
+  (function header() {
+    const c = $('#hword'), small = innerWidth < 700;
+    const go = () => { const g = document.createElement('canvas').getContext('2d'), L = wordLayout(g, 100); asciiEnv(c, { cw: small ? 4 : 6, ch: small ? 7 : 10, font: small ? 6.5 : 9.5, mask: wordMask, solid: true, ratio: (L.w + 14) / 100 * .92 }); };
+    (document.fonts && document.fonts.load ? document.fonts.load('800 100px I').catch(() => { }) : Promise.resolve()).then(go);
+  })();
 
   /* ---------------- dialogs ---------------- */
   function modal({ title, html, buttons = [], wide = false, onBuild, onClose }) {
@@ -312,7 +349,7 @@
     const m = modal({
       title: 'You',
       html: `<div class="mecard">${idcEl(S.code)}<div><b>${esc(S.code)}</b><span>${esc(fname(S.floor))} floor · wallet hidden</span></div></div><div class="stats" id="meStats">reading…</div>`,
-      buttons: [{ t: 'Disconnect', fn: () => { signOut(); toast('Disconnected.'); } }, { t: 'Sent', fn: () => { setFolder('sent'); goTo($('#inbox'), 76); } }, { t: 'Edit profile', pri: true, fn: () => { setTimeout(() => profileDialog(false), 180); } }],
+      buttons: [{ t: 'Disconnect', fn: () => { signOut(); toast('Disconnected.'); } }, { t: 'Sent', fn: () => { setFolder('sent'); toInbox(); } }, { t: 'Edit profile', pri: true, fn: () => { setTimeout(() => profileDialog(false), 180); } }],
     });
     try { const j = await api('me'); setMe(j.codename, j.floor); const st = $('#meStats', m.el); if (st) st.innerHTML = `<span><b>${j.threads}</b> mails</span><span><b>${j.replies}</b> replies</span><span><b>${j.votes}</b> +1s received</span>`; }
     catch (e) { const st = $('#meStats', m.el); if (st) st.textContent = e.message; }
@@ -454,12 +491,12 @@
     if (!id) return; S.open = id; S.replyDraft = S.replyDraft && S.replyDraft.id === id ? S.replyDraft : null;
     $$('.row', rowsEl).forEach(r => r.classList.toggle('sel', +r.dataset.id === id));
     client.dataset.pane = 'read'; read.scrollTop = 0;
-    try { history.replaceState(null, '', '?m=' + id + location.hash); } catch (e) { }
+    if (fromLink) toInbox();
+    try { history.replaceState({ p: 'inbox' }, '', '/inbox?m=' + id); } catch (e) { }
     const cached = S.threads.find(t => t.id === id);
     if (!S.thread || S.thread.id !== id) read.innerHTML = `<div class="mail"><h3 class="subj">${esc(cached ? cached.subject : '…')}</h3><div class="skel" style="padding:0;border:0;margin-top:20px"><i class="a"></i><i style="width:40%"></i><i style="width:90%"></i><i style="width:70%"></i></div></div>`;
     await refreshThread(true);
     if (S.thread && S.thread.id === id) { S.seen[id] = S.thread.replies; saveSeen(); const r = $(`.row[data-id="${id}"]`, rowsEl); if (r) r.classList.remove('un'); renderRows(); }
-    if (fromLink) goTo($('#inbox'), 76);
   }
   async function refreshThread(force) {
     const id = S.open; if (!id) return;
@@ -480,7 +517,7 @@
   }
   function closeRead() {
     client.dataset.pane = 'list'; S.open = null; S.thread = null; S.sig = ''; $$('.row.sel', rowsEl).forEach(r => r.classList.remove('sel'));
-    try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) { }
+    try { history.replaceState({ p: document.body.dataset.page }, '', location.pathname); } catch (e) { }
     setTimeout(renderRead, innerWidth <= 1180 ? 420 : 0);
   }
   read.addEventListener('click', async e => {
@@ -489,7 +526,7 @@
       const t = S.thread, act = a.dataset.a;
       if (act === 'back') return closeRead();
       if (!t) return;
-      if (act === 'link') { try { await navigator.clipboard.writeText(location.origin + '/?m=' + t.id); toast('Link copied.'); } catch (_) { toast(location.origin + '/?m=' + t.id); } return; }
+      if (act === 'link') { try { await navigator.clipboard.writeText(location.origin + '/inbox?m=' + t.id); toast('Link copied.'); } catch (_) { toast(location.origin + '/inbox?m=' + t.id); } return; }
       needAuth(async () => {
         try {
           if (act === 'vote') { const j = await api('vote', { kind: 't', id: t.id }); t.voted = j.voted; t.votes += j.voted ? 1 : -1; renderRead(); loadList(true); }
@@ -541,7 +578,7 @@
         const j = await api('compose', { to: v.to || 'everyone', subject: v.subject, body: v.body, tag: d.tag });
         dropDraft(); close(); toast('Sent.'); S.seen[j.id] = 0; saveSeen();
         S.folder = 'inbox'; S.fl = null; S.tag = null; S.q = ''; $('#q').value = ''; $$('#folders [data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === 'inbox')); $$('#sideFloors [data-fl], #sideTags [data-tag]').forEach(b => b.classList.remove('on')); loadWire();
-        await loadList(true); openThread(j.id); loadFloors(); goTo($('#inbox'), 76);
+        toInbox(); await loadList(true); openThread(j.id); loadFloors();
       } catch (e) { note.innerHTML = `<span class="err">${esc(e.message)}</span>`; btn.disabled = false; btn.textContent = 'send'; }
     }
     el.addEventListener('click', e => {
@@ -583,7 +620,7 @@
     const by = Object.fromEntries((S.floors || []).map(f => [f.id, f]));
     $('#board').innerHTML = order.map(id => { const f = by[id] || { id, name: FLOOR_NAME[id], threads: 0, today: 0, people: 0 }; return `<button type="button" class="fl" data-board="${id}"><span class="no">${FLOOR_NO[id] === 'EXIT' ? 'EXIT' : 'FL ' + FLOOR_NO[id]}</span><span class="nm">${esc(f.name)}</span><span class="v"><b>${f.threads}</b> mails</span><span class="v d"><b>${f.today}</b> today</span><span class="v p"><b>${f.people}</b> ${f.people === 1 ? 'person' : 'people'}</span><span class="lt">${f.last ? ago(f.last) : 'no mail yet'}</span><span class="go">→</span></button>`; }).join('');
   }
-  $('#board').addEventListener('click', e => { const b = e.target.closest('[data-board]'); if (!b) return; setFolder('inbox', b.dataset.board); goTo($('#inbox'), 76); });
+  $('#board').addEventListener('click', e => { const b = e.target.closest('[data-board]'); if (!b) return; setFolder('inbox', b.dataset.board); toInbox(); });
   function renderTape() {
     const T = (S.inbox || []).slice(0, 14), tape = $('#tape');
     if (!T.length) { tape.hidden = true; return; }
@@ -602,7 +639,7 @@
     if ($('.dlg')) return;
     const k = e.key;
     if (k === 'c') { e.preventDefault(); needAuth(() => openCompose()); }
-    else if (k === '/') { e.preventDefault(); goTo($('#inbox'), 76); setTimeout(() => $('#q').focus({ preventScroll: true }), 400); }
+    else if (k === '/') { e.preventDefault(); toInbox(); setTimeout(() => $('#q').focus({ preventScroll: true }), 300); }
     else if (k === 'j' || k === 'k') {
       const rows = $$('.row[data-id]', rowsEl); if (!rows.length) return; e.preventDefault();
       let i = rows.findIndex(r => +r.dataset.id === S.open); i = i < 0 ? 0 : Math.max(0, Math.min(rows.length - 1, i + (k === 'j' ? 1 : -1)));
