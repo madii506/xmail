@@ -2,7 +2,8 @@
   "cleanUrls": true,
   "functions": { "api/xmail.js": { "maxDuration": 20 } },
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/xmail?__p=:path*" }
+    { "source": "/api/:path*", "destination": "/api/xmail?__p=:path*" },
+    { "source": "/inbox", "destination": "/index.html" }
   ],
   "headers": [
     { "source": "/fonts/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
