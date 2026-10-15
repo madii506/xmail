@@ -1,0 +1,8 @@
+{
+  "name": "xmail",
+  "private": true,
+  "description": "the inbox elon can't read. unofficial, not affiliated with X Corp.",
+  "engines": { "node": "22.x" },
+  "dependencies": { "@neondatabase/serverless": "^0.10.4" },
+  "devDependencies": { "pg": "^8.13.1" }
+}
