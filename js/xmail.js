@@ -77,9 +77,9 @@
     const step = () => { sp.textContent = fullT.slice(0, ++i); if (i < fullT.length) setTimeout(step, 40 + Math.random() * 45); };
     setTimeout(step, 150);
   }
-  $$('.h2').forEach(h => { h.dataset.type = h.querySelector('span').textContent; if (!reduce) h.querySelector('span').textContent = ''; });
+  $$('.h2:not(.asc)').forEach(h => { h.dataset.type = h.querySelector('span').textContent; if (!reduce) h.querySelector('span').textContent = ''; });
   const io = new IntersectionObserver(es => es.forEach(e => { if (!e.isIntersecting) return; const el = e.target; el.classList.contains('h2') ? typeH2(el) : el.classList.add('vis'); io.unobserve(el); }), { rootMargin: '0px 0px -8% 0px' });
-  $$('.rv, .h2').forEach(el => io.observe(el));
+  $$('.rv, .h2:not(.asc)').forEach(el => io.observe(el));
   const nav = $('#nav'), navState = () => nav.classList.toggle('scrolled', scrollY > 8);
   addEventListener('scroll', navState, { passive: true }); navState();
   const navLinks = $$('#links a'), ind = $('#ind');
@@ -127,7 +127,7 @@
       dpr = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight;
       c.width = W * dpr; c.height = H * dpr; cols = Math.ceil(W / CW); rows = Math.ceil(H / CH);
       lit = new Float32Array(cols * rows); chars = Array.from({ length: cols * rows }, () => SET[Math.random() * SET.length | 0]);
-      const n = Math.round(cols * (W < 700 ? .12 : .16)); drops = Array.from({ length: n }, () => ({ c: Math.random() * cols | 0, y: Math.random() * rows, v: 2 + Math.random() * 5 }));
+      const n = Math.round(cols * (W < 700 ? .07 : .09)); drops = Array.from({ length: n }, () => ({ c: Math.random() * cols | 0, y: Math.random() * rows, v: 2 + Math.random() * 5 }));
       dots = document.createElement('canvas'); dots.width = c.width; dots.height = c.height; const d = dots.getContext('2d');
       d.scale(dpr, dpr); d.fillStyle = 'rgba(231,233,234,.07)';
       for (let r = 0; r < rows; r += 2) for (let k = 0; k < cols; k += 3) d.fillRect(k * CW + CW / 2, r * CH + CH / 2, 1, 1);
@@ -145,7 +145,7 @@
       x.setTransform(dpr, 0, 0, dpr, 0, 0); x.font = '500 12px M, monospace'; x.textBaseline = 'middle'; x.textAlign = 'center';
       const mc = MX.x / CW | 0, mr = MX.y / CH | 0, R = 7;
       for (let r = 0; r < rows; r++) for (let k2 = 0; k2 < cols; k2++) {
-        const i = r * cols + k2; let a = lit[i] * .17;
+        const i = r * cols + k2; let a = lit[i] * .12;
         const dx = k2 - mc, dy = (r - mr) * 1.6; if (dx > -R && dx < R && dy > -R && dy < R) { const dd = Math.sqrt(dx * dx + dy * dy); if (dd < R) a = Math.max(a, (1 - dd / R) * .22); }
         if (a < .012) continue;
         x.fillStyle = `rgba(231,233,234,${a.toFixed(3)})`; x.fillText(chars[i], k2 * CW + CW / 2, r * CH + CH / 2);
@@ -216,6 +216,27 @@
     return { stop: () => cancelAnimationFrame(raf) };
   }
   asciiEnv($('#henv'), { cw: innerWidth < 700 ? 5 : 7, ch: innerWidth < 700 ? 8 : 12, font: innerWidth < 700 ? 8 : 10.5 });
+  /* section titles, drawn in the same characters as the header */
+  function textMask(text) {
+    return (g, W, H) => {
+      g.font = '800 100px I, Inter, sans-serif'; try { g.letterSpacing = '2px'; } catch (e) { }
+      const fs = Math.min(H * .96, (W - 8) / (g.measureText(text).width / 100));
+      g.font = `800 ${fs}px I, Inter, sans-serif`; try { g.letterSpacing = (fs * .02) + 'px'; } catch (e) { }
+      g.fillStyle = '#fff'; g.textBaseline = 'alphabetic'; g.fillText(text, 4, H * .8);
+    };
+  }
+  function asciiTitles() {
+    const small = innerWidth < 700, H = small ? 84 : 124;
+    $$('.h2.asc').forEach(h => {
+      if (h.querySelector('canvas')) return;
+      const t = h.dataset.t, c = document.createElement('canvas'); c.setAttribute('aria-hidden', 'true'); h.appendChild(c);
+      const g = document.createElement('canvas').getContext('2d'); g.font = `800 ${H * .96}px I, Inter, sans-serif`; try { g.letterSpacing = (H * .96 * .02) + 'px'; } catch (e) { }
+      const natW = Math.ceil(g.measureText(t).width + 14); c.style.width = `min(${natW}px, 100%)`;
+      asciiEnv(c, { cw: small ? 4 : 6, ch: small ? 7 : 10, font: small ? 6.6 : 9.8, mask: textMask(t), solid: true, ratio: natW / H });
+    });
+    $$('.arule .ad').forEach(r => { r.textContent = ' ' + '-'.repeat(260); });
+  }
+  (document.fonts && document.fonts.load ? document.fonts.load('800 100px I').catch(() => { }) : Promise.resolve()).then(asciiTitles);
   (function header() {
     const c = $('#hword'), small = innerWidth < 700;
     const go = () => { const g = document.createElement('canvas').getContext('2d'), L = wordLayout(g, 100); asciiEnv(c, { cw: small ? 4 : 6, ch: small ? 7 : 10, font: small ? 6.5 : 9.5, mask: wordMask, solid: true, ratio: (L.w + 14) / 100 * .92 }); };
@@ -615,10 +636,32 @@
     const list = S.floors || Object.keys(FLOOR_NAME).map(id => ({ id, name: FLOOR_NAME[id], threads: 0, today: 0 }));
     $('#sideFloors').innerHTML = list.map(f => `<button type="button" data-fl="${f.id}" class="${S.fl === f.id ? 'on' : ''}${f.today ? ' live' : ''}"><i></i><span>${esc(f.name)}</span><em>${f.threads || ''}</em></button>`).join('');
   }
+  /* the building, in characters: a lit window per bit of mail on that floor */
+  const WIN = {};
+  function renderTower() {
+    const order = ['eng', 'grok', 'ads', 'payments', 'product', 'design', 'trust-safety', 'sales', 'other', 'ex-x'];
+    const by = Object.fromEntries((S.floors || []).map(f => [f.id, f])), NW = 7, inner = NW * 3 + 2;
+    const ctr = t => { const l = Math.floor((inner + 2 - t.length) / 2); return ' '.repeat(Math.max(0, l)) + t; };
+    const k = Math.floor((inner - 5) / 2) - 3, out = [ctr('|'), ctr('_|_'), ctr('_'.repeat(k) + '|___|' + '_'.repeat(k)), '|' + '_'.repeat(inner) + '|'];
+    order.forEach(id => {
+      const f = by[id] || { threads: 0, today: 0 }, lit = f.threads ? Math.min(NW, Math.ceil(Math.log2(f.threads + 1) * 1.6)) : 0, hot = f.today ? Math.min(lit, Math.ceil(Math.log2(f.today + 1) * 1.6)) : 0;
+      let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      const slots = Array.from({ length: NW }, (_, i) => i).sort((a, b) => ((a * 7 + h) % 11) - ((b * 7 + h) % 11));
+      const w = new Array(NW).fill(0); slots.slice(0, lit).forEach((k, i) => { w[k] = i < hot ? 2 : 1; });
+      const win = w.map(v => v === 2 ? '<b>[X]</b>' : v === 1 ? '<i>[x]</i>' : '<u>[ ]</u>').join('');
+      const no = FLOOR_NO[id] === 'EXIT' ? 'EXIT' : FLOOR_NO[id];
+      WIN[id] = `<span class="win">| ${win} |</span>`;
+    });
+    $('#tower').textContent = out.slice(0, 4).join('\n');
+  }
+  $('#tower').addEventListener('click', e => { const b = e.target.closest('[data-board]'); if (!b) return; setFolder('inbox', b.dataset.board); toInbox(); });
+  const hlFloor = id => $$('#tower [data-board], #board [data-board]').forEach(x => x.classList.toggle('hl', x.dataset.board === id));
+  ['#tower', '#board'].forEach(sel => { $(sel).addEventListener('pointerover', e => { const b = e.target.closest('[data-board]'); hlFloor(b ? b.dataset.board : null); }); $(sel).addEventListener('pointerleave', () => hlFloor(null)); });
   function renderBoard() {
+    renderTower();
     const order = ['eng', 'grok', 'ads', 'payments', 'product', 'design', 'trust-safety', 'sales', 'other', 'ex-x'];
     const by = Object.fromEntries((S.floors || []).map(f => [f.id, f]));
-    $('#board').innerHTML = order.map(id => { const f = by[id] || { id, name: FLOOR_NAME[id], threads: 0, today: 0, people: 0 }; return `<button type="button" class="fl" data-board="${id}"><span class="no">${FLOOR_NO[id] === 'EXIT' ? 'EXIT' : 'FL ' + FLOOR_NO[id]}</span><span class="nm">${esc(f.name)}</span><span class="v"><b>${f.threads}</b> mails</span><span class="v d"><b>${f.today}</b> today</span><span class="v p"><b>${f.people}</b> ${f.people === 1 ? 'person' : 'people'}</span><span class="lt">${f.last ? ago(f.last) : 'no mail yet'}</span><span class="go">→</span></button>`; }).join('');
+    $('#board').innerHTML = order.map(id => { const f = by[id] || { id, name: FLOOR_NAME[id], threads: 0, today: 0, people: 0 }; return `<button type="button" class="fl" data-board="${id}"><span class="no">${FLOOR_NO[id] === 'EXIT' ? 'EXIT' : 'FL ' + FLOOR_NO[id]}</span>${WIN[id] || ''}<span class="nm">${esc(f.name)}</span><span class="v"><b>${f.threads}</b> mails</span><span class="v d"><b>${f.today}</b> today</span><span class="v p"><b>${f.people}</b> ${f.people === 1 ? 'person' : 'people'}</span><span class="lt">${f.last ? ago(f.last) : 'no mail yet'}</span><span class="go">→</span></button>`; }).join('');
   }
   $('#board').addEventListener('click', e => { const b = e.target.closest('[data-board]'); if (!b) return; setFolder('inbox', b.dataset.board); toInbox(); });
   function renderTape() {
@@ -706,7 +749,7 @@
     const max = Math.max(0, ...g.flat()), lvl = v => !v ? 0 : Math.min(4, 1 + Math.floor(v / max * 3.999));
     let best = null; g.forEach((r, di) => r.forEach((v, h) => { if (v && (!best || v > best.v)) best = { v, di, h }; }));
     heatTip = mins.length ? `<b>${mins.length}</b> posts in the last 30 days · shown in your time zone` : 'No mail yet. The grid fills in as people post.';
-    $('#heat').innerHTML = `<div class="hg${heatDrawn ? ' still' : ''}"><span></span>${Array.from({ length: 24 }, (_, h) => `<span class="hl">${h % 3 === 0 ? pad(h) : ''}</span>`).join('')}${g.map((r, di) => `<span class="dl">${DAYS[di]}</span>${r.map((v, h) => `<span class="c l${lvl(v)}" data-h="${di},${h},${v}" style="--d:${h * 14 + di * 30}ms">${HCH[lvl(v)]}</span>`).join('')}`).join('')}</div>
+    $('#heat').innerHTML = `<div class="hscroll"><div class="hg${heatDrawn ? ' still' : ''}"><span></span>${Array.from({ length: 24 }, (_, h) => `<span class="hl">${h % 3 === 0 ? pad(h) : ''}</span>`).join('')}${g.map((r, di) => `<span class="dl">${DAYS[di]}</span>${r.map((v, h) => `<span class="c l${lvl(v)}" data-h="${di},${h},${v}" style="--d:${h * 14 + di * 30}ms">${HCH[lvl(v)]}</span>`).join('')}`).join('')}</div></div>
       <div class="hinfo"><span id="hTip">${heatTip}</span><span>${best ? `busiest: <b>${DAYS[best.di]} ${pad(best.h)}:00</b>` : ''}</span></div>`;
     heatDrawn = true;
   }
@@ -718,7 +761,7 @@
   async function loadTop() {
     let j; try { j = await api('top?range=' + BT.range); } catch (e) { $('#bList').innerHTML = `<div class="empty"><b>Ranking offline.</b><span>${esc(e.message)}</span></div>`; return; }
     const T = j.threads || [];
-    $('#bList').innerHTML = T.length ? T.map((t, i) => `<button type="button" class="tr${i < 3 ? ' pod' : ''}" data-open="${t.id}" style="--i:${i}"><span class="rk">${pad(i + 1)}</span><span class="vt">+${t.votes}</span><span class="sj"><b>${esc(t.subject)}</b><span>to: ${esc(t.to)}${t.tag ? ' · #' + esc(t.tag) : ''}</span></span><span class="by">${esc(t.codename)} · ${esc(fname(t.floor))}</span><span class="rp">↩ ${t.replies}</span></button>`).join('')
+    $('#bList').innerHTML = T.length ? T.map((t, i) => `<button type="button" class="tr${i < 3 ? ' pod' : ''}" data-open="${t.id}" style="--i:${i}"><span class="rk">#${pad(i + 1)}</span><span class="vt">[+${t.votes}]</span><span class="sj"><b>${esc(t.subject)}</b><span>to: ${esc(t.to)}${t.tag ? ' · #' + esc(t.tag) : ''}</span></span><span class="by">${esc(t.codename)} · ${esc(fname(t.floor))}</span><span class="rp">↩ ${t.replies}</span></button>`).join('')
       : `<div class="empty"><b>Nothing ranked ${BT.range === 'all' ? 'yet' : 'this ' + BT.range}.</b><span>Mail with +1s and replies climbs here.</span></div>`;
   }
   $('#bTabs').addEventListener('click', e => { const b = e.target.closest('[data-r]'); if (!b) return; BT.range = b.dataset.r; $$('#bTabs [data-r]').forEach(x => x.classList.toggle('on', x === b)); loadTop(); });
@@ -811,7 +854,7 @@
   Object.keys(REFRESH).forEach(id => { const el = $("#" + id); new IntersectionObserver(es => es.forEach(e => { if (!e.isIntersecting) return; const t = Date.now(); if (t - (el._t || 0) > 4000) { el._t = t; REFRESH[id](); } }), { rootMargin: '0px 0px -10% 0px' }).observe(el); });
 
   /* ---------------- start ---------------- */
-  renderMe(); saveDrafts(); renderSideFloors(); renderRead();
+  renderMe(); saveDrafts(); renderSideFloors(); renderTower(); renderRead();
   loadCfg(); loadFloors(); loadList(); loadWire(); loadPulse(); loadHeat(); loadTop();
   const deep = parseInt(new URLSearchParams(location.search).get('m'), 10); if (deep) setTimeout(() => openThread(deep, true), 500);
   setInterval(() => { if (document.hidden) return; if (S.folder !== 'drafts') loadList(true); if (S.open) refreshThread(); }, 8000);
